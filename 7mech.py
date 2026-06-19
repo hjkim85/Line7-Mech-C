@@ -74,39 +74,67 @@ def get_shift(target_date):
 # ==============================================================================
 def load_tasks(is_starred_only=False):
     """전체 현장 업무 일정을 불러옵니다."""
-    query = supabase.table("tasks").select("*")
-    if is_starred_only:
-        query = query.eq("is_starred", True)
-    return query.order("created_at", desc=True).execute().data
+    try:
+        query = supabase.table("tasks").select("*")
+        if is_starred_only:
+            query = query.eq("is_starred", True)
+        return query.order("created_at", desc=True).execute().data
+    except Exception as e:
+        st.error(f"❌ 업무 목록 DB 연동 실패: {e}")
+        return []
 
 def toggle_star(task_id, current_status):
     """업무의 중요 표시(별표) 상태를 반전시킵니다."""
-    supabase.table("tasks").update({"is_starred": not current_status}).eq("id", task_id).execute()
+    try:
+        supabase.table("tasks").update({"is_starred": not current_status}).eq("id", task_id).execute()
+    except Exception as e:
+        st.error(f"❌ 중요 표시 변경 실패: {e}")
 
 def load_notices():
     """상단 공지용 자체 중요알림 목록을 불러옵니다."""
-    return supabase.table("notices").select("*").order("created_at", desc=True).execute().data
+    try:
+        return supabase.table("notices").select("*").order("created_at", desc=True).execute().data
+    except Exception as e:
+        st.error(f"❌ 중요알림 DB 연동 실패: {e}")
+        return []
 
 def load_events(status="활성"):
     """진행 중 또는 종결된 설비 고장/보수 이벤트 이력을 불러옵니다."""
-    return supabase.table("events").select("*").eq("status", status).order("created_at", desc=True).execute().data
+    try:
+        return supabase.table("events").select("*").eq("status", status).order("created_at", desc=True).execute().data
+    except Exception as e:
+        st.error(f"❌ 이벤트 DB 연동 실패: {e}")
+        return []
 
 def change_event_status(event_id, new_status):
     """이벤트의 상태를 활성 또는 종결로 변환합니다."""
-    supabase.table("events").update({"status": new_status}).eq("id", event_id).execute()
+    try:
+        supabase.table("events").update({"status": new_status}).eq("id", event_id).execute()
+    except Exception as e:
+        st.error(f"❌ 이벤트 상태 변경 실패: {e}")
 
 def load_comments(event_id):
     """특정 이벤트 하위의 조치 내역 댓글을 실시간 로드합니다."""
-    return supabase.table("event_comments").select("*").eq("event_id", event_id).order("created_at", desc=False).execute().data
+    try:
+        return supabase.table("event_comments").select("*").eq("event_id", event_id).order("created_at", desc=False).execute().data
+    except Exception as e:
+        st.error(f"❌ 댓글 로드 실패: {e}")
+        return []
 
 def add_comment(event_id, content):
     """조치 내역 댓글을 등록합니다."""
-    data = {"event_id": event_id, "content": content, "user_email": "c_team"}
-    supabase.table("event_comments").insert(data).execute()
+    try:
+        data = {"event_id": event_id, "content": content, "user_email": "c_team"}
+        supabase.table("event_comments").insert(data).execute()
+    except Exception as e:
+        st.error(f"❌ 댓글 등록 실패: {e}")
 
 def delete_comment(comment_id):
     """등록된 조치 내역 댓글을 삭제합니다."""
-    supabase.table("event_comments").delete().eq("id", comment_id).execute()
+    try:
+        supabase.table("event_comments").delete().eq("id", comment_id).execute()
+    except Exception as e:
+        st.error(f"❌ 댓글 삭제 실패: {e}")
 
 
 # ==============================================================================
