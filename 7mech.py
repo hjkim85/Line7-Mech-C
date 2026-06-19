@@ -22,9 +22,31 @@ import pandas as pd
 import calendar
 from datetime import datetime, date
 from supabase import create_client, Client
+import streamlit.components.v1 as components
 
 # 앱 상단 탭 제목 및 홈 화면 숏컷 아이콘(파비콘) 설정
 st.set_page_config(page_title="Line7-Mech-C", page_icon="icon.png", layout="wide")
+
+# [핵심] 모바일 홈 화면 '빨간 배' 아이콘 덮어쓰기 우회 스크립트
+components.html("""
+<script>
+    const doc = window.parent.document;
+    
+    // 1. 스트림릿의 기본 모바일 설정(매니페스트) 무력화
+    const manifest = doc.querySelector('link[rel="manifest"]');
+    if(manifest) manifest.remove();
+    
+    // 2. 스마트폰 홈 화면 전용(apple-touch-icon) 로고 강제 주입
+    // (주의: 깃허브에 올리신 파일명이 icon.png가 맞는지 확인해 주십시오)
+    const newIcon = doc.createElement('link');
+    newIcon.rel = 'apple-touch-icon';
+    newIcon.href = 'https://raw.githubusercontent.com/hjkim85/Line7-Mech-C/main/icon.png';
+    doc.head.appendChild(newIcon);
+
+    // 3. 홈 화면 추가 시 추천되는 기본 이름 강제 변경
+    doc.title = '7호선 C조';
+</script>
+""", height=0, width=0)
 
 
 # ==============================================================================
