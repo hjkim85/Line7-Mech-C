@@ -24,7 +24,7 @@ from datetime import datetime, date
 from supabase import create_client, Client
 
 # 앱 상단 탭 제목 및 홈 화면 숏컷 아이콘(파비콘) 설정
-st.set_page_config(page_title="Line7-Mech-C", page_icon="🚇", layout="wide")
+st.set_page_config(page_title="Line7-Mech-C", page_icon="icon.png", layout="wide")
 
 
 # ==============================================================================
