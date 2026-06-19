@@ -22,31 +22,9 @@ import pandas as pd
 import calendar
 from datetime import datetime, date
 from supabase import create_client, Client
-import streamlit.components.v1 as components
 
 # 앱 상단 탭 제목 및 홈 화면 숏컷 아이콘(파비콘) 설정
 st.set_page_config(page_title="Line7-Mech-C", page_icon="icon.png", layout="wide")
-
-# [핵심] 모바일 홈 화면 '빨간 배' 아이콘 덮어쓰기 우회 스크립트
-components.html("""
-<script>
-    const doc = window.parent.document;
-    
-    // 1. 스트림릿의 기본 모바일 설정(매니페스트) 무력화
-    const manifest = doc.querySelector('link[rel="manifest"]');
-    if(manifest) manifest.remove();
-    
-    // 2. 스마트폰 홈 화면 전용(apple-touch-icon) 로고 강제 주입
-    // (주의: 깃허브에 올리신 파일명이 icon.png가 맞는지 확인해 주십시오)
-    const newIcon = doc.createElement('link');
-    newIcon.rel = 'apple-touch-icon';
-    newIcon.href = 'https://raw.githubusercontent.com/hjkim85/Line7-Mech-C/main/icon.png';
-    doc.head.appendChild(newIcon);
-
-    // 3. 홈 화면 추가 시 추천되는 기본 이름 강제 변경
-    doc.title = '7호선 C조';
-</script>
-""", height=0, width=0)
 
 
 # ==============================================================================
@@ -212,13 +190,13 @@ def render_task_card(task, prefix=""):
         if c4.button("🗑️", key=f"{prefix}d_{task['id']}", use_container_width=True, help="삭제"):
             st.session_state[f"del_{prefix}_{task['id']}"] = True
 
-        # [하위 세부 로직 1] 인라인 업무 수정 폼
+        # [하위 세부 로직 1] 인라인 업무 수정 폼 (👉 여기서 중복 Key 에러 발생했던 부분을 cat_ 으로 수정했습니다!)
         if st.session_state.get(f"edit_{prefix}_{task['id']}"):
             st.markdown("---")
             edit_title = st.text_input("제목 수정", value=task['title'], key=f"{prefix}t_{task['id']}")
             cat_options = ["일반", "점검", "자체", "외주", "제출", "보고"]
             current_cat = task['category'] if task['category'] in cat_options else "일반"
-            edit_cat = st.selectbox("분류 수정", cat_options, index=cat_options.index(current_cat), key=f"{prefix}c_{task['id']}")
+            edit_cat = st.selectbox("분류 수정", cat_options, index=cat_options.index(current_cat), key=f"{prefix}cat_{task['id']}")
             edit_content = st.text_area("내용 수정", value=task['content'], key=f"{prefix}cnt_{task['id']}")
             if st.button("💾 저장하기", key=f"{prefix}save_{task['id']}"):
                 supabase.table("tasks").update({"title": edit_title, "category": edit_cat, "content": edit_content}).eq("id", task['id']).execute()
@@ -239,58 +217,50 @@ def render_task_card(task, prefix=""):
 
 
 # ==============================================================================
-# [단원 7] 글로벌 CSS 웹 스타일링 정의 
+# [단원 7] 글로벌 CSS 웹 스타일링 정의
 # ==============================================================================
 st.markdown("""
 <style>
-    /* 이벤트 종결 버튼 전용 소프트 그린 테마화 */
+    /* 🚀 1. 스트림릿 플랫폼 껍데기(Share, GitHub, 톱니바퀴 등) 완벽 숨기기 */
+    header[data-testid="stHeader"] { display: none !important; }
+    
+    /* 🚀 2. 하단 워터마크 및 관리자 버튼 숨기기 */
+    footer { display: none !important; }
+    div[data-testid="stManageApp"] { display: none !important; }
+    
+    /* 🚀 3. 상단 메뉴바가 사라진 빈 공간 위로 바짝 당기기 */
+    .block-container {
+        padding-top: 2.5rem !important;
+        padding-bottom: 1rem !important;
+    }
+
+    /* --- 아래는 기존과 동일한 기능 CSS --- */
     button:has(div:contains("이 이벤트 종결하기")) {
         background-color: #22c55e !important;
         color: white !important;
         border: none !important;
     }
-    
-    /* 모바일 환경에서 컬럼들이 세로로 깨지는 것 강제 방지 (버튼 4열 한줄 고정) */
-    @media (max-width: 576px) {
-        [data-testid="stHorizontalBlock"] {
-            flex-wrap: nowrap !important;
-        }
-        [data-testid="stHorizontalBlock"] > div {
-            min-width: 0 !important;
-            padding-left: 2px !important;
-            padding-right: 2px !important;
-        }
-    }
-
-    /* 캘린더 기본 레이아웃 CSS */
     .cal-wrapper { overflow-x: auto; width: 100%; padding-bottom: 10px; }
     .cal-table { min-width: 700px; width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 15px; }
     .cal-th { background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 8px; text-align: center; color: #475569; font-weight: bold; font-size: 0.9em; }
     .cal-td { border: 1px solid #e2e8f0; height: 110px; vertical-align: top; padding: 4px; }
     .cal-td-empty { background-color: #f1f5f9; border: 1px solid #e2e8f0; }
     .cal-day { font-weight: bold; color: #1e293b; margin-bottom: 4px; font-size: 0.9em; text-align: left; display: flex; justify-content: space-between; align-items: center;}
-    
-    /* 캘린더 내부 카드 CSS */
     .cal-task { font-size: 0.75em; background-color: #dbeafe; color: #1e40af; padding: 3px 5px; margin-bottom: 3px; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 3px solid #3b82f6; cursor: pointer; display: block; }
     .cal-task.starred { background-color: #fef9c3; color: #9a3412; border-left: 3px solid #f59e0b; font-weight: bold; }
     .cal-task.closed { background-color: #f1f5f9; color: #94a3b8; border-left: 3px solid #cbd5e1; text-decoration: line-through; }
     
-    /* [새 기능] 캘린더 팝업(모달) CSS */
     .modal-toggle { display: none; }
-    .modal-bg {
-        display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-        background: rgba(0,0,0,0.6); z-index: 999999; align-items: center; justify-content: center;
-    }
+    .modal-bg { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 999999; align-items: center; justify-content: center; }
     .modal-toggle:checked + .modal-bg { display: flex; }
-    .modal-content {
-        background: white; padding: 25px; border-radius: 12px; width: 85%; max-width: 450px;
-        position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: left;
-    }
-    .modal-close {
-        position: absolute; top: 15px; right: 20px; font-size: 26px; font-weight: bold;
-        color: #94a3b8; cursor: pointer; line-height: 1;
-    }
+    .modal-content { background: white; padding: 25px; border-radius: 12px; width: 85%; max-width: 450px; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: left; }
+    .modal-close { position: absolute; top: 15px; right: 20px; font-size: 26px; font-weight: bold; color: #94a3b8; cursor: pointer; line-height: 1; }
     .modal-close:hover { color: #ef4444; }
+    
+    @media (max-width: 576px) {
+        [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
+        [data-testid="stHorizontalBlock"] > div { min-width: 0 !important; padding-left: 2px !important; padding-right: 2px !important; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
