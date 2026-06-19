@@ -169,25 +169,25 @@ def render_task_card(task, prefix=""):
         
         # 액션 제어 패널 (4열 압축)
         c1, c2, c3, c4 = st.columns(4)
-        star_icon = "⭐중요" if task.get('is_starred') else "☆중요"
+        star_icon = "⭐" if task.get('is_starred') else "☆"
         
-        if c1.button(star_icon, key=f"{prefix}s_{task['id']}", use_container_width=True):
+        if c1.button(star_icon, key=f"{prefix}s_{task['id']}", use_container_width=True, help="중요 표시"):
             toggle_star(task['id'], task.get('is_starred', False))
             st.rerun()
             
-        if c2.button("✏️수정", key=f"{prefix}e_{task['id']}", use_container_width=True):
+        if c2.button("✏️", key=f"{prefix}e_{task['id']}", use_container_width=True, help="수정"):
             st.session_state[f"edit_{prefix}_{task['id']}"] = not st.session_state.get(f"edit_{prefix}_{task['id']}", False)
             
         if status == '활성':
-            if c3.button("✔️종료", key=f"{prefix}c_{task['id']}", use_container_width=True):
+            if c3.button("✔️", key=f"{prefix}c_{task['id']}", use_container_width=True, help="종료"):
                 supabase.table("tasks").update({"status": "종료", "is_starred": False}).eq("id", task['id']).execute()
                 st.rerun()
         else:
-            if c3.button("🔄활성", key=f"{prefix}o_{task['id']}", use_container_width=True):
+            if c3.button("🔄", key=f"{prefix}o_{task['id']}", use_container_width=True, help="활성 전환"):
                 supabase.table("tasks").update({"status": "활성"}).eq("id", task['id']).execute()
                 st.rerun()
                 
-        if c4.button("🗑️삭제", key=f"{prefix}d_{task['id']}", use_container_width=True):
+        if c4.button("🗑️", key=f"{prefix}d_{task['id']}", use_container_width=True, help="삭제"):
             st.session_state[f"del_{prefix}_{task['id']}"] = True
 
         # [하위 세부 로직 1] 인라인 업무 수정 폼
@@ -217,7 +217,7 @@ def render_task_card(task, prefix=""):
 
 
 # ==============================================================================
-# [단원 7] 글로벌 CSS 웹 스타일링 정의
+# [단원 7] 글로벌 CSS 웹 스타일링 정의 
 # ==============================================================================
 st.markdown("""
 <style>
@@ -227,16 +227,48 @@ st.markdown("""
         color: white !important;
         border: none !important;
     }
-    /* 모바일 가로 찌그러짐 방지용 달력 반응형 랩퍼 기술 */
+    
+    /* 모바일 환경에서 컬럼들이 세로로 깨지는 것 강제 방지 (버튼 4열 한줄 고정) */
+    @media (max-width: 576px) {
+        [data-testid="stHorizontalBlock"] {
+            flex-wrap: nowrap !important;
+        }
+        [data-testid="stHorizontalBlock"] > div {
+            min-width: 0 !important;
+            padding-left: 2px !important;
+            padding-right: 2px !important;
+        }
+    }
+
+    /* 캘린더 기본 레이아웃 CSS */
     .cal-wrapper { overflow-x: auto; width: 100%; padding-bottom: 10px; }
     .cal-table { min-width: 700px; width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 15px; }
     .cal-th { background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 8px; text-align: center; color: #475569; font-weight: bold; font-size: 0.9em; }
     .cal-td { border: 1px solid #e2e8f0; height: 110px; vertical-align: top; padding: 4px; }
     .cal-td-empty { background-color: #f1f5f9; border: 1px solid #e2e8f0; }
     .cal-day { font-weight: bold; color: #1e293b; margin-bottom: 4px; font-size: 0.9em; text-align: left; display: flex; justify-content: space-between; align-items: center;}
-    .cal-task { font-size: 0.75em; background-color: #dbeafe; color: #1e40af; padding: 3px 5px; margin-bottom: 3px; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 3px solid #3b82f6; }
+    
+    /* 캘린더 내부 카드 CSS */
+    .cal-task { font-size: 0.75em; background-color: #dbeafe; color: #1e40af; padding: 3px 5px; margin-bottom: 3px; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 3px solid #3b82f6; cursor: pointer; display: block; }
     .cal-task.starred { background-color: #fef9c3; color: #9a3412; border-left: 3px solid #f59e0b; font-weight: bold; }
     .cal-task.closed { background-color: #f1f5f9; color: #94a3b8; border-left: 3px solid #cbd5e1; text-decoration: line-through; }
+    
+    /* [새 기능] 캘린더 팝업(모달) CSS */
+    .modal-toggle { display: none; }
+    .modal-bg {
+        display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background: rgba(0,0,0,0.6); z-index: 999999; align-items: center; justify-content: center;
+    }
+    .modal-toggle:checked + .modal-bg { display: flex; }
+    .modal-content {
+        background: white; padding: 25px; border-radius: 12px; width: 85%; max-width: 450px;
+        position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: left;
+    }
+    .modal-close {
+        position: absolute; top: 15px; right: 20px; font-size: 26px; font-weight: bold;
+        color: #94a3b8; cursor: pointer; line-height: 1;
+    }
+    .modal-close:hover { color: #ef4444; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -354,12 +386,26 @@ with tabs[1]:
                 
                 tasks_html = ""
                 for t in day_tasks:
+                    task_id = t['id']
                     star = "⭐" if t.get('is_starred') else ""
-                    if t.get('status') == '종료':
-                        css_class = "cal-task closed"
-                    else:
-                        css_class = "cal-task starred" if t.get('is_starred') else "cal-task"
-                    tasks_html += f"<div class='{css_class}'>{star} {t['title']}</div>"
+                    css_class = "cal-task closed" if t.get('status') == '종료' else ("cal-task starred" if t.get('is_starred') else "cal-task")
+                    
+                    safe_title = t['title'].replace("'", "&#39;").replace('"', "&quot;")
+                    safe_content = t['content'].replace("'", "&#39;").replace('"', "&quot;").replace('\n', '<br>')
+                    
+                    tasks_html += f"""
+                    <label for='modal_{task_id}' class='{css_class}'>{star} {safe_title}</label>
+                    <input type='checkbox' id='modal_{task_id}' class='modal-toggle'>
+                    <div class='modal-bg'>
+                        <div class='modal-content'>
+                            <label for='modal_{task_id}' class='modal-close'>&times;</label>
+                            <h4 style='margin-top:0; color:#1e293b; font-size:1.1em;'>{star} [{t['category']}] {safe_title}</h4>
+                            <p style='color:#64748b; font-size:0.85em; margin-bottom:10px;'>📌 일정: {t['date_type']} ({t['start_date']})<br>🚦 상태: {t.get('status', '활성')}</p>
+                            <hr style='border:0; border-top:1px solid #e2e8f0; margin:10px 0;'>
+                            <p style='color:#334155; font-size:0.95em; line-height:1.5;'>{safe_content}</p>
+                        </div>
+                    </div>
+                    """
                 
                 day_style = "color: white; background-color: #3b82f6; padding: 2px 6px; border-radius: 50%;" if (day == today.day and cmonth == today.month and cyear == today.year) else ""
                 html_cal += f"<td class='cal-td'><div class='cal-day'><span style='{day_style}'>{day}</span> {shift_html}</div>{tasks_html}</td>"
@@ -435,7 +481,6 @@ with tabs[3]:
                         delete_comment(c['id'])
                         st.rerun()
                 
-                # 멀티라인 개행 입력 및 [기록] 버튼 수동 제출 아키텍처
                 with st.form(key=f"c_form_{event['id']}", clear_on_submit=True):
                     new_comment = st.text_area("진행 상황/조치 내역 추가", key=f"c_input_{event['id']}", height=80)
                     if st.form_submit_button("기록"):
