@@ -276,7 +276,13 @@ st.markdown("""
 # ==============================================================================
 # [단원 8] 메인 레이아웃 및 7대 핵심 기능 탭 구성
 # ==============================================================================
-st.markdown("<h3 style='text-align: center; color: #1E3A8A;'>🚇 Line7-Mech-C 업무 포털</h3>", unsafe_allow_html=True)
+st.markdown("""
+<h3 style='text-align: center; color: #1E3A8A; display: flex; align-items: center; justify-content: center;'>
+    <img src="https://raw.githubusercontent.com/hjkim85/Line7-Mech-C/main/icon.png" width="35" style="margin-right: 10px; border-radius: 8px;"> 
+    Line7-Mech-C 업무 포털
+</h3>
+""", unsafe_allow_html=True)
+
 st.markdown("---")
 
 # 상단 7개 네비게이션 메뉴 탭 마운트
