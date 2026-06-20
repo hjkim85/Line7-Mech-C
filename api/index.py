@@ -7,29 +7,37 @@ app = Flask(__name__)
 # 프로젝트 최상위 경로 설정
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# 🌟 Vercel에 저장한 환경변수(수파베이스 주소 및 암호)를 안전하게 가져옵니다.
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+# 🌟 DB 클라이언트를 미리 연결하지 않고 비워둡니다.
+supabase_client = None
 
-# 수파베이스 클라이언트 초기화
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# DB가 필요할 때만 조심스럽게 연결하는 안전 함수
+def get_supabase():
+    global supabase_client
+    if supabase_client is None:
+        SUPABASE_URL = os.environ.get("SUPABASE_URL")
+        SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+        
+        # 키가 제대로 안 들어왔을 때를 대비한 에러 처리
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise ValueError("Vercel 환경변수(비밀키)를 찾을 수 없습니다!")
+            
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return supabase_client
 
 @app.route('/')
 def home():
-    # 메인 대문 화면을 보여줍니다.
+    # 🌟 DB 연결과 상관없이 일단 대문 화면부터 무조건 띄웁니다!
     return render_template('index.html')
 
-# 🌟 [업무 목록 및 캘린더 데이터 호출 API]
-# 기존 7mech.py에서 스트림릿으로 그리던 데이터를 웹 화면(JavaScript)에 전달하는 창구입니다.
 @app.route('/api/data')
 def get_backend_data():
     try:
-        # 데이터베이스의 테이블에서 전체 데이터를 가져옵니다.
-        # 기존 테이블명에 맞춰 조회하며, 오류 방지를 위해 예외 처리를 강화했습니다.
-        # (실제 테이블명이나 정렬 기준은 이후 UI 구성 시 정확히 맞출 예정입니다.)
-        response = supabase.table("schedules").select("*").order("date", desc=False).execute()
+        # 이 주소로 들어올 때만 안전하게 DB를 연결합니다.
+        client = get_supabase()
+        response = client.table("schedules").select("*").order("date", desc=False).execute()
         return jsonify({"status": "success", "data": response.data})
     except Exception as e:
+        # 에러가 나도 앱이 뻗지 않고, 화면에 에러 이유를 친절하게 글자로 보여줍니다.
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # 🖼️ PC/모바일 아이콘 및 앱 설계도 전달 라우터
