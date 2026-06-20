@@ -1,5 +1,6 @@
 from flask import Flask, render_template, send_from_directory, jsonify
-from supabase import create_client, Client
+import urllib.request
+import json
 import os
 
 app = Flask(__name__)
@@ -7,37 +8,41 @@ app = Flask(__name__)
 # 프로젝트 최상위 경로 설정
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# 🌟 DB 클라이언트를 미리 연결하지 않고 비워둡니다.
-supabase_client = None
-
-# DB가 필요할 때만 조심스럽게 연결하는 안전 함수
-def get_supabase():
-    global supabase_client
-    if supabase_client is None:
-        SUPABASE_URL = os.environ.get("SUPABASE_URL")
-        SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-        
-        # 키가 제대로 안 들어왔을 때를 대비한 에러 처리
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            raise ValueError("Vercel 환경변수(비밀키)를 찾을 수 없습니다!")
-            
-        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    return supabase_client
-
 @app.route('/')
 def home():
-    # 🌟 DB 연결과 상관없이 일단 대문 화면부터 무조건 띄웁니다!
+    # 대문 화면 출력
     return render_template('index.html')
 
 @app.route('/api/data')
 def get_backend_data():
     try:
-        # 이 주소로 들어올 때만 안전하게 DB를 연결합니다.
-        client = get_supabase()
-        response = client.table("schedules").select("*").order("date", desc=False).execute()
-        return jsonify({"status": "success", "data": response.data})
+        # Vercel 환경변수 불러오기
+        SUPABASE_URL = os.environ.get("SUPABASE_URL")
+        SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+        
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise ValueError("Vercel 환경변수(비밀키)를 찾을 수 없습니다.")
+
+        # 🌟 수파베이스 라이브러리를 쓰지 않고, 파이썬 순정 기능으로 웹 주소에 직접 요청합니다.
+        # (만약 수파베이스에 만드신 테이블 이름이 schedules가 아니라면 그 이름으로 바꿔주세요)
+        url = f"{SUPABASE_URL}/rest/v1/schedules?select=*&order=date.asc"
+        
+        # 비밀키를 명찰처럼 달고 요청을 보냅니다.
+        req = urllib.request.Request(url)
+        req.add_header("apikey", SUPABASE_KEY)
+        req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+        req.add_header("Content-Type", "application/json")
+        
+        # 직통 연결 후 데이터 수신
+        with urllib.request.urlopen(req) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            return jsonify({"status": "success", "data": result})
+            
+    except urllib.error.HTTPError as e:
+        # 테이블 이름이 틀렸거나 권한이 없을 때 뜨는 에러 처리
+        error_msg = e.read().decode('utf-8')
+        return jsonify({"status": "error", "message": f"DB 통신 거절됨: {error_msg}"}), 500
     except Exception as e:
-        # 에러가 나도 앱이 뻗지 않고, 화면에 에러 이유를 친절하게 글자로 보여줍니다.
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # 🖼️ PC/모바일 아이콘 및 앱 설계도 전달 라우터
