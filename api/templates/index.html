@@ -10,8 +10,8 @@
     <meta name="theme-color" content="#1E3A8A">
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100 font-sans">
-    <div class="max-w-md mx-auto bg-white min-h-screen shadow-lg relative">
+<body class="bg-gray-100 font-sans relative">
+    <div class="max-w-md mx-auto bg-white min-h-screen shadow-lg relative pb-24">
         <header class="bg-blue-900 text-white p-4 flex items-center justify-center shadow-md sticky top-0 z-10">
             <img src="/icon.png" alt="logo" class="w-8 h-8 mr-3 rounded-md object-cover bg-white">
             <h1 class="text-xl font-bold tracking-wider">Line7-Mech-C</h1>
@@ -19,70 +19,105 @@
         
         <main class="p-5">
             <div class="flex justify-between items-center mb-4 border-b-2 border-blue-900 pb-2">
-                <h2 class="text-lg font-extrabold text-gray-800 flex items-center">
-                    <span class="mr-2">📅</span> C조 업무 일정
-                </h2>
-                <button onclick="loadSchedules()" class="text-sm bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300 transition">
-                    새로고침 ↻
-                </button>
+                <h2 class="text-lg font-extrabold text-gray-800 flex items-center">📅 C조 업무 일정</h2>
+                <button onclick="loadSchedules()" class="text-sm bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300">새로고침 ↻</button>
             </div>
-            
-            <div id="schedule-list" class="space-y-4 pb-20">
-                <div class="text-center text-gray-500 py-12 animate-pulse font-medium">
-                    DB에서 일정을 불러오는 중입니다... 🚀
+            <div id="schedule-list" class="space-y-4"></div>
+        </main>
+
+        <button onclick="toggleModal('eventModal')" class="fixed bottom-6 right-6 bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl text-3xl flex items-center justify-center hover:bg-blue-700 hover:scale-105 transition transform z-20">
+            +
+        </button>
+
+        <div id="eventModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-30 flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+                <h3 class="text-lg font-bold mb-4 border-b pb-2">새 업무 등록</h3>
+                <input type="date" id="newDate" class="w-full mb-3 p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
+                <input type="text" id="newTitle" placeholder="업무 제목 (예: 상동역 배기팬 점검)" class="w-full mb-3 p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
+                <textarea id="newContent" placeholder="상세 내용을 입력하세요" class="w-full mb-4 p-2 border rounded h-24 focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+                <div class="flex justify-end space-x-2">
+                    <button onclick="toggleModal('eventModal')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">취소</button>
+                    <button onclick="saveEvent()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">저장하기</button>
                 </div>
             </div>
-        </main>
+        </div>
     </div>
 
     <script>
+        // 화면 로드 및 새로고침
         async function loadSchedules() {
-            const listContainer = document.getElementById('schedule-list');
-            listContainer.innerHTML = '<div class="text-center text-blue-600 py-12 animate-pulse font-medium">데이터 갱신 중... 🔄</div>';
-            
+            const list = document.getElementById('schedule-list');
+            list.innerHTML = '<div class="text-center py-10 text-gray-500 animate-pulse">데이터 불러오는 중...</div>';
             try {
-                // 파이썬 백엔드(/api/data) 호출
-                const response = await fetch('/api/data');
-                const result = await response.json();
-                
+                const res = await fetch('/api/data');
+                const result = await res.json();
                 if (result.status === 'success') {
-                    const data = result.data;
-                    
-                    if (data.length === 0) {
-                        listContainer.innerHTML = '<div class="text-center text-gray-500 py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300">등록된 일정이 없습니다.</div>';
+                    list.innerHTML = '';
+                    if (result.data.length === 0) {
+                        list.innerHTML = '<div class="text-center text-gray-500 py-10 bg-gray-50 rounded">일정이 없습니다.</div>';
                         return;
                     }
-
-                    // 화면 비우고 카드 그리기 시작
-                    listContainer.innerHTML = ''; 
-                    
-                    data.forEach(item => {
-                        // DB 데이터 추출 (값이 없으면 기본값 세팅)
-                        const eventDate = item.event_date || '날짜 미정';
-                        const title = item.title || '제목 없음';
-                        const content = item.content || '내용이 없습니다.';
-                        
-                        // 카드 HTML 생성
-                        const cardHtml = `
-                            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition">
-                                <div class="flex justify-between items-center mb-2">
-                                    <span class="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-md font-bold">${eventDate}</span>
+                    result.data.forEach(item => {
+                        list.innerHTML += `
+                            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative">
+                                <div class="flex justify-between items-start mb-2">
+                                    <span class="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-md font-bold">${item.event_date || ''}</span>
+                                    <button onclick="deleteEvent(${item.id})" class="text-gray-400 hover:text-red-500 text-sm px-2">삭제</button>
                                 </div>
-                                <h3 class="font-bold text-gray-800 text-base mb-1.5">${title}</h3>
-                                <p class="text-sm text-gray-600 line-clamp-3 leading-relaxed">${content}</p>
+                                <h3 class="font-bold text-gray-800 text-base mb-1">${item.title}</h3>
+                                <p class="text-sm text-gray-600">${item.content || ''}</p>
                             </div>
                         `;
-                        listContainer.innerHTML += cardHtml;
                     });
-                } else {
-                    listContainer.innerHTML = `<div class="text-red-500 bg-red-50 p-4 rounded-lg font-medium text-sm">에러 발생: ${result.message}</div>`;
                 }
-            } catch (error) {
-                listContainer.innerHTML = '<div class="text-red-500 bg-red-50 p-4 rounded-lg font-medium text-sm">서버와 통신할 수 없습니다.</div>';
-            }
+            } catch (e) { alert("통신 오류가 발생했습니다."); }
         }
 
-        // 앱이 켜지자마자 데이터 로드 함수 실행
+        // 팝업창 열기/닫기
+        function toggleModal(id) {
+            const modal = document.getElementById(id);
+            modal.classList.toggle('hidden');
+        }
+
+        // 새 일정 저장 로직
+        async function saveEvent() {
+            const date = document.getElementById('newDate').value;
+            const title = document.getElementById('newTitle').value;
+            const content = document.getElementById('newContent').value;
+            
+            if(!date || !title) return alert("날짜와 제목을 입력해주세요!");
+
+            const payload = { event_date: date, title: title, content: content };
+            
+            try {
+                const res = await fetch('/api/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                if(result.status === 'success') {
+                    toggleModal('eventModal'); // 창 닫기
+                    // 입력창 초기화
+                    document.getElementById('newDate').value = '';
+                    document.getElementById('newTitle').value = '';
+                    document.getElementById('newContent').value = '';
+                    loadSchedules(); // 목록 새로고침
+                } else { alert("저장 실패: " + result.message); }
+            } catch (e) { alert("저장 중 오류 발생"); }
+        }
+
+        // 일정 삭제 로직
+        async function deleteEvent(id) {
+            if(!confirm("이 일정을 삭제(종결) 하시겠습니까?")) return;
+            try {
+                const res = await fetch('/api/delete/' + id, { method: 'DELETE' });
+                const result = await res.json();
+                if(result.status === 'success') loadSchedules();
+                else alert("삭제 실패: " + result.message);
+            } catch (e) { alert("삭제 중 오류 발생"); }
+        }
+
         window.onload = loadSchedules;
     </script>
 </body>
