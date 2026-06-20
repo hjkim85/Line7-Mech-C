@@ -1,0 +1,19 @@
+{
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    { "src": "/icon.png", "dest": "/icon.png" },
+    { "src": "/manifest.json", "dest": "/manifest.json" },
+    { "src": "/(.*)", "dest": "api/index.py" }
+  ],
+  "crons": [
+    {
+      "path": "/",
+      "schedule": "30 22 * * 1-5"
+    }
+  ]
+}
