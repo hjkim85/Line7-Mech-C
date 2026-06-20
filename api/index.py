@@ -25,7 +25,7 @@ def get_backend_data():
 
         # 🌟 수파베이스 라이브러리를 쓰지 않고, 파이썬 순정 기능으로 웹 주소에 직접 요청합니다.
         # (만약 수파베이스에 만드신 테이블 이름이 schedules가 아니라면 그 이름으로 바꿔주세요)
-        url = f"{SUPABASE_URL}/rest/v1/schedules?select=*&order=date.asc"
+        url = f"{SUPABASE_URL}/rest/v1/events?select=*"
         
         # 비밀키를 명찰처럼 달고 요청을 보냅니다.
         req = urllib.request.Request(url)
