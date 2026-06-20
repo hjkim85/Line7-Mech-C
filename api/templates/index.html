@@ -3,122 +3,306 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>7호선 C조 업무포털</title>
+    <title>Line7-Mech-C 업무포털</title>
     <link rel="manifest" href="/manifest.json?v=3">
     <link rel="apple-touch-icon" href="/icon.png">
     <link rel="icon" type="image/png" href="/icon.png">
     <meta name="theme-color" content="#1E3A8A">
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 모바일 스와이프 탭 & 스크롤바 숨기기 */
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+        .tab-btn { white-space: nowrap; padding: 12px 16px; font-weight: 700; color: #94a3b8; border-bottom: 3px solid transparent; transition: all 0.2s; }
+        .tab-btn.active { color: #1e3a8a; border-bottom-color: #1e3a8a; }
+        .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0; border: 1px solid #e2e8f0; }
+        .cal-cell { background: white; min-height: 80px; padding: 4px; display: flex; flex-direction: column; }
+        .cal-header { background: #f8fafc; text-align: center; font-weight: bold; font-size: 0.8rem; padding: 6px 0; }
+    </style>
 </head>
-<body class="bg-gray-100 font-sans relative">
-    <div class="max-w-md mx-auto bg-white min-h-screen shadow-lg relative pb-24">
-        <header class="bg-blue-900 text-white p-4 flex items-center justify-center shadow-md sticky top-0 z-10">
-            <img src="/icon.png" alt="logo" class="w-8 h-8 mr-3 rounded-md object-cover bg-white">
+<body class="bg-gray-100 font-sans">
+    <div class="max-w-md mx-auto bg-white min-h-screen shadow-lg relative pb-20">
+        <header class="bg-blue-900 text-white p-4 flex items-center justify-center shadow-md sticky top-0 z-20">
+            <img src="/icon.png" class="w-8 h-8 mr-3 rounded-md object-cover bg-white">
             <h1 class="text-xl font-bold tracking-wider">Line7-Mech-C</h1>
         </header>
-        
-        <main class="p-5">
-            <div class="flex justify-between items-center mb-4 border-b-2 border-blue-900 pb-2">
-                <h2 class="text-lg font-extrabold text-gray-800 flex items-center">📅 C조 업무 일정</h2>
-                <button onclick="loadSchedules()" class="text-sm bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300">새로고침 ↻</button>
-            </div>
-            <div id="schedule-list" class="space-y-4"></div>
+
+        <nav class="flex overflow-x-auto hide-scroll bg-white border-b sticky top-[64px] z-10" id="tabs">
+            <button onclick="switchTab(0)" class="tab-btn active">📢 중요알림</button>
+            <button onclick="switchTab(1)" class="tab-btn">📅 캘린더</button>
+            <button onclick="switchTab(2)" class="tab-btn">📋 업무목록</button>
+            <button onclick="switchTab(3)" class="tab-btn">🚨 이벤트</button>
+            <button onclick="switchTab(4)" class="tab-btn">✅ 종결이벤트</button>
+            <button onclick="switchTab(5)" class="tab-btn">📁 자료실</button>
+        </nav>
+
+        <main class="p-4" id="main-content">
+            <div class="text-center py-20 text-gray-400 animate-pulse font-bold">시스템 로딩 중... 🚀</div>
         </main>
 
-        <button onclick="toggleModal('eventModal')" class="fixed bottom-6 right-6 bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl text-3xl flex items-center justify-center hover:bg-blue-700 hover:scale-105 transition transform z-20">
+        <button onclick="openAddModal()" class="fixed bottom-6 right-6 lg:right-[calc(50%-12rem)] bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl text-3xl flex items-center justify-center hover:bg-blue-700 z-30 transition transform hover:scale-105">
             +
         </button>
 
-        <div id="eventModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-30 flex items-center justify-center p-4">
-            <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-                <h3 class="text-lg font-bold mb-4 border-b pb-2">새 업무 등록</h3>
-                <input type="date" id="newDate" class="w-full mb-3 p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
-                <input type="text" id="newTitle" placeholder="업무 제목 (예: 상동역 배기팬 점검)" class="w-full mb-3 p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
-                <textarea id="newContent" placeholder="상세 내용을 입력하세요" class="w-full mb-4 p-2 border rounded h-24 focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
-                <div class="flex justify-end space-x-2">
-                    <button onclick="toggleModal('eventModal')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">취소</button>
-                    <button onclick="saveEvent()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">저장하기</button>
+        <div id="addModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-40 flex items-end justify-center sm:items-center">
+            <div class="bg-white w-full max-w-md sm:rounded-xl rounded-t-2xl p-5 transform transition-all pb-8">
+                <div class="flex justify-between items-center mb-4 border-b pb-2">
+                    <h3 class="text-lg font-bold text-gray-800" id="modalTitle">새로 등록하기</h3>
+                    <button onclick="document.getElementById('addModal').classList.add('hidden')" class="text-gray-400 hover:text-red-500 text-2xl">&times;</button>
                 </div>
+                <div id="modalBody" class="space-y-3">
+                    </div>
+                <button onclick="submitData()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg mt-4 shadow-md hover:bg-blue-700">저장하기</button>
             </div>
         </div>
     </div>
 
     <script>
-        // 화면 로드 및 새로고침
-        async function loadSchedules() {
-            const list = document.getElementById('schedule-list');
-            list.innerHTML = '<div class="text-center py-10 text-gray-500 animate-pulse">데이터 불러오는 중...</div>';
+        let db = { notices: [], tasks: [], events: [], comments: [] };
+        let currentTab = 0;
+        let calYear = new Date().getFullYear();
+        let calMonth = new Date().getMonth() + 1;
+        const DEFAULT_EMAIL = "c_team@incheon.go.kr";
+
+        // 시스템 시작 시 모든 데이터 불러오기
+        async function initApp() {
             try {
-                const res = await fetch('/api/data');
-                const result = await res.json();
-                if (result.status === 'success') {
-                    list.innerHTML = '';
-                    if (result.data.length === 0) {
-                        list.innerHTML = '<div class="text-center text-gray-500 py-10 bg-gray-50 rounded">일정이 없습니다.</div>';
-                        return;
-                    }
-                    result.data.forEach(item => {
-                        list.innerHTML += `
-                            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative">
-                                <div class="flex justify-between items-start mb-2">
-                                    <span class="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-md font-bold">${item.event_date || ''}</span>
-                                    <button onclick="deleteEvent(${item.id})" class="text-gray-400 hover:text-red-500 text-sm px-2">삭제</button>
-                                </div>
-                                <h3 class="font-bold text-gray-800 text-base mb-1">${item.title}</h3>
-                                <p class="text-sm text-gray-600">${item.content || ''}</p>
-                            </div>
-                        `;
-                    });
-                }
-            } catch (e) { alert("통신 오류가 발생했습니다."); }
+                const [nRes, tRes, eRes, cRes] = await Promise.all([
+                    fetch('/api/notices').then(r => r.json()),
+                    fetch('/api/tasks').then(r => r.json()),
+                    fetch('/api/events').then(r => r.json()),
+                    fetch('/api/event_comments').then(r => r.json())
+                ]);
+                db.notices = nRes.data || [];
+                db.tasks = tRes.data || [];
+                db.events = eRes.data || [];
+                db.comments = cRes.data || [];
+                renderTab();
+            } catch (e) { alert("서버 통신 오류가 발생했습니다."); }
         }
 
-        // 팝업창 열기/닫기
-        function toggleModal(id) {
-            const modal = document.getElementById(id);
-            modal.classList.toggle('hidden');
+        // 4조 2교대 8일 주기 교대조 계산 함수 (2026-06-01 B/D 기준)
+        function getShift(year, month, day) {
+            const baseDate = new Date(2026, 5, 1); // JS는 월이 0부터 시작
+            const targetDate = new Date(year, month - 1, day);
+            const diffTime = targetDate - baseDate;
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            const cycle = ['A/D', 'A/C', 'B/A', 'B/D', 'C/B', 'C/A', 'D/C', 'D/B'];
+            let shiftIndex = ((diffDays + 3) % 8 + 8) % 8;
+            return cycle[shiftIndex];
         }
 
-        // 새 일정 저장 로직
-        async function saveEvent() {
-            const date = document.getElementById('newDate').value;
-            const title = document.getElementById('newTitle').value;
-            const content = document.getElementById('newContent').value;
-            
-            if(!date || !title) return alert("날짜와 제목을 입력해주세요!");
+        function switchTab(index) {
+            currentTab = index;
+            document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+                btn.className = `tab-btn ${i === index ? 'active' : ''}`;
+            });
+            renderTab();
+        }
 
-            const payload = { event_date: date, title: title, content: content };
+        function renderTab() {
+            const main = document.getElementById('main-content');
+            main.innerHTML = '';
             
-            try {
-                const res = await fetch('/api/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+            if (currentTab === 0) {
+                // 1. 중요알림 탭
+                let html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1">📌 자체 중요알림</h2>`;
+                db.notices.forEach(n => {
+                    html += `<div class="bg-blue-50 p-3 rounded-lg border-l-4 border-blue-500 mb-3 text-sm flex justify-between items-center shadow-sm">
+                                <span class="font-bold text-gray-800">${n.content}</span>
+                                <button onclick="deleteItem('notices', ${n.id})" class="text-gray-400 hover:text-red-500 ml-2">🗑️</button>
+                             </div>`;
                 });
-                const result = await res.json();
-                if(result.status === 'success') {
-                    toggleModal('eventModal'); // 창 닫기
-                    // 입력창 초기화
-                    document.getElementById('newDate').value = '';
-                    document.getElementById('newTitle').value = '';
-                    document.getElementById('newContent').value = '';
-                    loadSchedules(); // 목록 새로고침
-                } else { alert("저장 실패: " + result.message); }
-            } catch (e) { alert("저장 중 오류 발생"); }
+                html += `<h2 class="font-bold text-orange-600 mt-6 mb-3 border-b pb-1">⭐ 중요 표시된 현장 업무</h2>`;
+                const starred = db.tasks.filter(t => t.is_starred);
+                if(starred.length === 0) html += `<div class="text-gray-400 text-sm">중요 표시된 업무가 없습니다.</div>`;
+                starred.forEach(t => html += renderTaskCard(t));
+                main.innerHTML = html;
+
+            } else if (currentTab === 1) {
+                // 2. 업무캘린더 탭
+                const firstDay = new Date(calYear, calMonth - 1, 1).getDay();
+                const daysInMonth = new Date(calYear, calMonth, 0).getDate();
+                const today = new Date();
+                
+                let html = `
+                    <div class="flex justify-between items-center mb-4 bg-white p-2 rounded-lg shadow-sm border">
+                        <button onclick="calMonth--; if(calMonth<1){calMonth=12; calYear--;} renderTab();" class="p-2 bg-gray-100 rounded hover:bg-gray-200">◀</button>
+                        <h3 class="font-black text-lg">${calYear}년 ${calMonth}월</h3>
+                        <button onclick="calMonth++; if(calMonth>12){calMonth=1; calYear++;} renderTab();" class="p-2 bg-gray-100 rounded hover:bg-gray-200">▶</button>
+                    </div>
+                    <div class="cal-grid rounded-xl overflow-hidden shadow-sm">
+                        <div class="cal-header text-red-500">일</div><div class="cal-header">월</div><div class="cal-header">화</div>
+                        <div class="cal-header">수</div><div class="cal-header">목</div><div class="cal-header">금</div><div class="cal-header text-blue-500">토</div>
+                `;
+                
+                for (let i = 0; i < firstDay; i++) html += `<div class="cal-cell bg-gray-50"></div>`;
+                
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const dateStr = `${calYear}-${String(calMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const shift = getShift(calYear, calMonth, day);
+                    const isToday = (day === today.getDate() && calMonth === today.getMonth()+1 && calYear === today.getFullYear());
+                    const shiftColor = shift.includes('C') ? 'text-red-500' : 'text-gray-400';
+                    const dayBadge = isToday ? `bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center` : ``;
+                    
+                    let dayHtml = `<div class="cal-cell border-t border-r border-gray-100">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-xs font-bold ${dayBadge}">${day}</span>
+                            <span class="text-[0.65rem] font-bold ${shiftColor}">${shift}</span>
+                        </div>`;
+                    
+                    db.tasks.filter(t => t.start_date === dateStr).forEach(t => {
+                        const style = t.status === '종료' ? 'bg-gray-100 text-gray-400 line-through border-l-2 border-gray-300' : 
+                                      (t.is_starred ? 'bg-yellow-100 text-yellow-800 border-l-2 border-yellow-500 font-bold' : 'bg-blue-50 text-blue-800 border-l-2 border-blue-500');
+                        dayHtml += `<div class="text-[0.65rem] p-1 mb-1 rounded truncate shadow-sm cursor-pointer ${style}">${t.title}</div>`;
+                    });
+                    html += dayHtml + `</div>`;
+                }
+                main.innerHTML = html + `</div>`;
+
+            } else if (currentTab === 2) {
+                // 3. 업무목록 탭
+                let html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1">📋 전체 업무 목록</h2>`;
+                if(db.tasks.length === 0) html += `<div class="text-gray-400 text-sm text-center py-10">등록된 업무가 없습니다.</div>`;
+                db.tasks.forEach(t => html += renderTaskCard(t));
+                main.innerHTML = html;
+
+            } else if (currentTab === 3 || currentTab === 4) {
+                // 4. 이벤트 & 5. 종결이벤트 탭
+                const statusStr = currentTab === 3 ? "활성" : "종결";
+                const icon = currentTab === 3 ? "🔴" : "🟢";
+                let html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1">${icon} ${statusStr} 이벤트 내역</h2>`;
+                const filtered = db.events.filter(e => (e.status || '활성') === statusStr);
+                
+                if(filtered.length === 0) html += `<div class="text-gray-400 text-sm text-center py-10">해당하는 이벤트가 없습니다.</div>`;
+                
+                filtered.forEach(e => {
+                    let cmtHtml = '';
+                    db.comments.filter(c => c.event_id === e.id).forEach(c => {
+                        cmtHtml += `<div class="text-xs text-gray-600 bg-gray-50 p-2 rounded mb-1 border flex justify-between">
+                                        <span>💬 ${c.content}</span>
+                                        <button onclick="deleteItem('event_comments', ${c.id})" class="text-red-400">✖</button>
+                                    </div>`;
+                    });
+
+                    const btnAction = currentTab === 3 ? 
+                        `<button onclick="updateItem('events', ${e.id}, {status:'종결'})" class="w-full bg-green-500 text-white text-sm py-2 rounded font-bold shadow">이 이벤트 종결하기</button>` :
+                        `<button onclick="updateItem('events', ${e.id}, {status:'활성'})" class="w-full bg-gray-500 text-white text-sm py-2 rounded font-bold shadow">활성 상태로 되돌리기</button>`;
+
+                    html += `
+                        <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
+                            <div class="font-bold text-gray-800 mb-1 border-b pb-2 flex justify-between">
+                                <span>${icon} [${e.event_date || ''}] ${e.title}</span>
+                            </div>
+                            <p class="text-sm text-gray-700 my-2 font-medium">초기 증상: ${e.content}</p>
+                            <div class="my-3 space-y-1">${cmtHtml}</div>
+                            ${currentTab === 3 ? `<div class="flex gap-2 mb-3">
+                                <input type="text" id="cmt_${e.id}" placeholder="조치 내역 기록..." class="flex-1 border p-2 text-sm rounded outline-none focus:border-blue-500">
+                                <button onclick="addComment(${e.id})" class="bg-blue-600 text-white px-3 rounded text-sm font-bold">등록</button>
+                            </div>` : ''}
+                            ${btnAction}
+                        </div>
+                    `;
+                });
+                main.innerHTML = html;
+            } else {
+                main.innerHTML = `<div class="text-center py-20 text-gray-400">구글 클라우드 연동 준비 중입니다. ☁️</div>`;
+            }
         }
 
-        // 일정 삭제 로직
-        async function deleteEvent(id) {
-            if(!confirm("이 일정을 삭제(종결) 하시겠습니까?")) return;
-            try {
-                const res = await fetch('/api/delete/' + id, { method: 'DELETE' });
-                const result = await res.json();
-                if(result.status === 'success') loadSchedules();
-                else alert("삭제 실패: " + result.message);
-            } catch (e) { alert("삭제 중 오류 발생"); }
+        function renderTaskCard(t) {
+            const isClosed = t.status === '종료';
+            const titleStyle = isClosed ? "text-gray-400 line-through" : "text-gray-800";
+            return `
+                <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-3">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="bg-blue-100 text-blue-800 text-[0.7rem] px-2 py-0.5 rounded-md font-bold">[${t.category || '일반'}] ${t.date_type || '특정날짜'} ${t.start_date || ''}</span>
+                    </div>
+                    <h3 class="font-extrabold ${titleStyle} text-base mb-1">${t.title}</h3>
+                    <p class="text-sm text-gray-600 mb-3">${t.content || ''}</p>
+                    <div class="flex gap-2 bg-gray-50 p-2 rounded-lg border">
+                        <button onclick="updateItem('tasks', ${t.id}, {is_starred: ${!t.is_starred}})" class="flex-1 py-1 bg-white border rounded text-sm hover:bg-gray-100 shadow-sm">${t.is_starred ? '⭐ 해제' : '☆ 중요'}</button>
+                        ${!isClosed ? 
+                            `<button onclick="updateItem('tasks', ${t.id}, {status: '종료'})" class="flex-1 py-1 bg-white border rounded text-sm text-green-600 font-bold hover:bg-gray-100 shadow-sm">✔️ 종료</button>` : 
+                            `<button onclick="updateItem('tasks', ${t.id}, {status: '활성'})" class="flex-1 py-1 bg-white border rounded text-sm text-blue-600 font-bold hover:bg-gray-100 shadow-sm">🔄 복구</button>`
+                        }
+                        <button onclick="deleteItem('tasks', ${t.id})" class="flex-1 py-1 bg-white border rounded text-sm text-red-500 hover:bg-red-50 shadow-sm">🗑️ 삭제</button>
+                    </div>
+                </div>
+            `;
         }
 
-        window.onload = loadSchedules;
+        function openAddModal() {
+            const body = document.getElementById('modalBody');
+            document.getElementById('modalTitle').innerText = 
+                currentTab === 0 ? "새 중요알림 등록" : currentTab === 3 ? "새 이벤트 발생 등록" : "새 업무 카드 등록";
+            
+            if(currentTab === 0) {
+                body.innerHTML = `<textarea id="m_content" class="w-full border p-3 rounded-lg h-32 outline-none focus:ring-2 focus:ring-blue-500" placeholder="알림 내용을 입력하세요"></textarea>`;
+            } else if(currentTab === 3 || currentTab === 4) {
+                body.innerHTML = `
+                    <input type="date" id="m_date" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                    <input type="text" id="m_title" placeholder="이벤트 제목" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                    <textarea id="m_content" class="w-full border p-3 rounded-lg h-24 outline-none focus:ring-2 focus:ring-blue-500" placeholder="초기 증상 및 현상"></textarea>`;
+            } else {
+                body.innerHTML = `
+                    <div class="flex gap-2">
+                        <input type="text" id="m_title" placeholder="업무 제목" class="w-2/3 border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                        <select id="m_cat" class="w-1/3 border p-3 rounded-lg outline-none"><option>일반</option><option>점검</option><option>자체</option><option>외주</option><option>제출</option><option>보고</option></select>
+                    </div>
+                    <div class="flex gap-2">
+                        <select id="m_dtype" class="w-1/3 border p-3 rounded-lg outline-none"><option>특정날짜</option><option>기간</option><option>기한</option></select>
+                        <input type="date" id="m_date" class="w-2/3 border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <textarea id="m_content" class="w-full border p-3 rounded-lg h-24 outline-none focus:ring-2 focus:ring-blue-500" placeholder="상세 업무 내용"></textarea>`;
+            }
+            document.getElementById('addModal').classList.remove('hidden');
+        }
+
+        async function submitData() {
+            let table = currentTab === 0 ? 'notices' : currentTab === 3 || currentTab === 4 ? 'events' : 'tasks';
+            let payload = { user_email: DEFAULT_EMAIL };
+            
+            if(table === 'notices') payload.content = document.getElementById('m_content').value;
+            else if(table === 'events') {
+                payload.event_date = document.getElementById('m_date').value;
+                payload.title = document.getElementById('m_title').value;
+                payload.content = document.getElementById('m_content').value;
+                payload.status = "활성";
+            } else {
+                payload.title = document.getElementById('m_title').value;
+                payload.category = document.getElementById('m_cat').value;
+                payload.date_type = document.getElementById('m_dtype').value;
+                payload.start_date = document.getElementById('m_date').value;
+                payload.content = document.getElementById('m_content').value;
+                payload.is_starred = false;
+                payload.status = "활성";
+            }
+
+            await fetch(`/api/${table}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+            document.getElementById('addModal').classList.add('hidden');
+            initApp();
+        }
+
+        async function addComment(eventId) {
+            const content = document.getElementById(`cmt_${eventId}`).value;
+            if(!content) return;
+            await fetch('/api/event_comments', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ event_id: eventId, content: content, user_email: DEFAULT_EMAIL }) });
+            initApp();
+        }
+
+        async function updateItem(table, id, data) {
+            await fetch(`/api/${table}/${id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+            initApp();
+        }
+
+        async function deleteItem(table, id) {
+            if(!confirm("정말 삭제하시겠습니까?")) return;
+            await fetch(`/api/${table}/${id}`, { method: 'DELETE' });
+            initApp();
+        }
+
+        window.onload = initApp;
     </script>
 </body>
 </html>
