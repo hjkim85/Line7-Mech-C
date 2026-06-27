@@ -17,6 +17,7 @@
         .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0; border: 1px solid #e2e8f0; }
         .cal-cell { background: white; min-height: 80px; padding: 4px; display: flex; flex-direction: column; }
         .cal-header { background: #f8fafc; text-align: center; font-weight: bold; font-size: 0.8rem; padding: 6px 0; }
+        .whitespace-pre-wrap { white-space: pre-wrap; } /* 멀티라인 지원 핵심 CSS */
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -38,18 +39,18 @@
         </nav>
 
         <main class="p-4" id="main-content">
-            <div class="text-center py-20 text-gray-400 font-bold">시스템 로딩 중... 🚀</div>
+            <div class="text-center py-20 text-gray-400 font-bold">데이터 로딩 중... 🚀</div>
         </main>
 
-        <button onclick="openAddModal()" class="fixed bottom-6 right-6 lg:right-[calc(50%-23rem)] bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl text-3xl flex items-center justify-center hover:bg-blue-700 z-30 transition transform hover:scale-105">
+        <button id="globalAddBtn" onclick="openModal()" class="fixed bottom-6 right-6 lg:right-[calc(50%-23rem)] bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl text-3xl flex items-center justify-center hover:bg-blue-700 z-30 transition transform hover:scale-105">
             +
         </button>
 
-        <div id="addModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-40 flex items-end justify-center sm:items-center">
-            <div class="bg-white w-full max-w-md sm:rounded-xl rounded-t-2xl p-5 transform transition-all pb-8 shadow-2xl">
+        <div id="actionModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-40 flex items-end justify-center sm:items-center">
+            <div class="bg-white w-full max-w-md sm:rounded-xl rounded-t-2xl p-5 transform transition-all pb-8 shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-4 border-b pb-2">
-                    <h3 class="text-lg font-bold text-gray-800" id="modalTitle">새로 등록하기</h3>
-                    <button onclick="document.getElementById('addModal').classList.add('hidden')" class="text-gray-400 hover:text-red-500 text-2xl font-bold">&times;</button>
+                    <h3 class="text-lg font-bold text-gray-800" id="modalTitle">등록/수정</h3>
+                    <button onclick="closeModal()" class="text-gray-400 hover:text-red-500 text-2xl font-bold">&times;</button>
                 </div>
                 <div id="modalBody" class="space-y-3"></div>
                 <button onclick="submitData()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg mt-4 shadow-md hover:bg-blue-700">저장하기</button>
@@ -63,6 +64,14 @@
         let calYear = new Date().getFullYear();
         let calMonth = new Date().getMonth() + 1;
         const DEFAULT_EMAIL = "c_team@incheon.go.kr";
+        let editMode = null; // 수정 모드 추적용: { table: 'tasks', id: 1 }
+
+        // 포맷팅 헬퍼
+        function formatDate(dateString) {
+            if(!dateString) return '';
+            const d = new Date(dateString);
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        }
 
         // 초기 데이터 로드
         async function initApp() {
@@ -74,81 +83,79 @@
                     fetch('/api/event_comments').then(r => r.json())
                 ]);
                 db.notices = nRes.data || [];
-                db.tasks = tRes.data || [];
+                // 업무목록 날짜 오름차순(빠른 기한순) 정렬
+                db.tasks = (tRes.data || []).sort((a, b) => new Date(a.start_date.split('~')[0]) - new Date(b.start_date.split('~')[0]));
                 db.events = eRes.data || [];
                 db.comments = cRes.data || [];
                 renderTab();
-            } catch (e) { alert("서버 통신 오류가 발생했습니다."); }
+            } catch (e) { console.error("Data Load Error", e); }
         }
 
-        // 4조 2교대 8일 주기 계산
+        // 교대주기 계산
         function getShift(year, month, day) {
             const baseDate = new Date(2026, 5, 1);
             const targetDate = new Date(year, month - 1, day);
-            const diffTime = targetDate - baseDate;
-            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            const diffDays = Math.floor((targetDate - baseDate) / (1000 * 60 * 60 * 24));
             const cycle = ['A/D', 'A/C', 'B/A', 'B/D', 'C/B', 'C/A', 'D/C', 'D/B'];
-            let shiftIndex = ((diffDays + 3) % 8 + 8) % 8;
-            return cycle[shiftIndex];
+            return cycle[((diffDays + 3) % 8 + 8) % 8];
         }
 
         function switchTab(index) {
             currentTab = index;
-            document.querySelectorAll('.tab-btn').forEach((btn, i) => {
-                btn.className = `tab-btn ${i === index ? 'active' : ''}`;
-            });
+            document.querySelectorAll('.tab-btn').forEach((btn, i) => btn.className = `tab-btn ${i === index ? 'active' : ''}`);
+            document.getElementById('globalAddBtn').style.display = (currentTab === 0 || currentTab > 4) ? 'none' : 'flex';
             renderTab();
         }
 
-        // 이벤트 아코디언 접기/펼치기 함수
         function toggleAccordion(id) {
-            const detailDiv = document.getElementById(`detail_${id}`);
-            const arrowSpan = document.getElementById(`arrow_${id}`);
-            if (detailDiv.classList.contains('hidden')) {
-                detailDiv.classList.remove('hidden');
-                arrowSpan.innerText = '▲';
-            } else {
-                detailDiv.classList.add('hidden');
-                arrowSpan.innerText = '▼';
-            }
+            const detailDiv = document.getElementById(id);
+            detailDiv.classList.toggle('hidden');
         }
 
-        // 탭별 화면 렌더링
+        // 메인 렌더링
         function renderTab() {
             const main = document.getElementById('main-content');
             let html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`; 
             
             if (currentTab === 0) {
-                // 중요알림 탭
-                html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">📌 자체 중요알림</h2>`;
+                // 중요알림 탭 (제목 옆에 + 버튼 배치)
+                html = `<div class="col-span-full flex justify-between items-center mb-3 border-b pb-1">
+                            <h2 class="font-bold text-blue-900 flex items-center"><span class="mr-2">📌</span> 자체 중요알림</h2>
+                            <button onclick="openModal('notices')" class="bg-blue-100 text-blue-700 px-3 py-1 rounded text-sm font-bold hover:bg-blue-200">+ 새 알림 등록</button>
+                        </div>`;
                 db.notices.forEach(n => {
-                    html += `<div class="bg-blue-50 p-3 rounded-lg border-l-4 border-blue-500 text-sm flex justify-between items-center shadow-sm">
-                                <span class="font-bold text-gray-800">${n.content}</span>
-                                <button onclick="deleteItem('notices', ${n.id})" class="text-gray-400 hover:text-red-500 ml-2">🗑️</button>
+                    html += `<div class="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500 shadow-sm col-span-full relative">
+                                <p class="font-bold text-gray-800 whitespace-pre-wrap text-sm leading-relaxed">${n.content}</p>
+                                <div class="mt-2 text-xs text-gray-500 flex justify-between items-end border-t border-blue-100 pt-2">
+                                    <span>작성: ${n.user_email.split('@')[0]} | ${formatDate(n.created_at)}</span>
+                                    <div class="flex gap-2">
+                                        <button onclick="openModal('notices', ${n.id})" class="text-blue-500 hover:underline">수정</button>
+                                        <button onclick="deleteItem('notices', ${n.id})" class="text-red-500 hover:underline">삭제</button>
+                                    </div>
+                                </div>
                              </div>`;
                 });
                 
                 html += `<h2 class="font-bold text-orange-600 mt-6 mb-3 border-b pb-1 col-span-full">⭐ 중요 표시된 현장 업무</h2>`;
-                const starred = db.tasks.filter(t => t.is_starred);
-                if(starred.length === 0) html += `<div class="text-gray-400 text-sm col-span-full">중요 표시된 업무가 없습니다.</div>`;
+                const starred = db.tasks.filter(t => t.is_starred && t.status !== '종료');
+                if(starred.length === 0) html += `<div class="text-gray-400 text-sm col-span-full">중요 표시된 진행중 업무가 없습니다.</div>`;
                 starred.forEach(t => html += renderTaskCard(t));
                 main.innerHTML = `<div class="flex flex-col space-y-3 w-full col-span-full">` + html + `</div>`;
 
             } else if (currentTab === 1) {
-                // 달력 탭
+                // 캘린더 탭
                 const firstDay = new Date(calYear, calMonth - 1, 1).getDay();
                 const daysInMonth = new Date(calYear, calMonth, 0).getDate();
                 const today = new Date();
                 
                 let calHtml = `
                     <div class="flex justify-between items-center mb-4 bg-white p-2 rounded-lg shadow-sm border col-span-full w-full max-w-3xl mx-auto">
-                        <button onclick="calMonth--; if(calMonth<1){calMonth=12; calYear--;} renderTab();" class="p-2 bg-gray-100 rounded hover:bg-gray-200">◀</button>
+                        <button onclick="calMonth--; if(calMonth<1){calMonth=12; calYear--;} renderTab();" class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">◀</button>
                         <h3 class="font-black text-lg">${calYear}년 ${calMonth}월</h3>
-                        <button onclick="calMonth++; if(calMonth>12){calMonth=1; calYear++;} renderTab();" class="p-2 bg-gray-100 rounded hover:bg-gray-200">▶</button>
+                        <button onclick="calMonth++; if(calMonth>12){calMonth=1; calYear++;} renderTab();" class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">▶</button>
                     </div>
                     <div class="cal-grid rounded-xl overflow-hidden shadow-sm col-span-full w-full max-w-3xl mx-auto">
-                        <div class="cal-header text-red-500">일</div><div class="cal-header">월</div><div class="cal-header">화</div>
-                        <div class="cal-header">수</div><div class="cal-header">목</div><div class="cal-header">금</div><div class="cal-header text-blue-500">토</div>
+                        <div class="cal-header text-red-500">일</div><div class="cal-header">월</div><div class="cal-header">화</div><div class="cal-header">수</div><div class="cal-header">목</div><div class="cal-header">금</div><div class="cal-header text-blue-500">토</div>
                 `;
                 
                 for (let i = 0; i < firstDay; i++) calHtml += `<div class="cal-cell bg-gray-50"></div>`;
@@ -160,236 +167,220 @@
                     const shiftColor = shift.includes('C') ? 'text-red-500' : 'text-gray-400';
                     const dayBadge = isToday ? `bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center` : ``;
                     
-                    let dayHtml = `<div class="cal-cell border-t border-r border-gray-100">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="text-xs font-bold ${dayBadge}">${day}</span>
-                            <span class="text-[0.65rem] font-bold ${shiftColor}">${shift}</span>
-                        </div>`;
+                    let dayHtml = `<div class="cal-cell border-t border-r border-gray-100"><div class="flex justify-between items-center mb-1"><span class="text-xs font-bold ${dayBadge}">${day}</span><span class="text-[0.65rem] font-bold ${shiftColor}">${shift}</span></div>`;
                     
-                    db.tasks.filter(t => t.start_date === dateStr).forEach(t => {
-                        const style = t.status === '종료' ? 'bg-gray-100 text-gray-400 line-through border-l-2 border-gray-300' : 
-                                      (t.is_starred ? 'bg-yellow-100 text-yellow-800 border-l-2 border-yellow-500 font-bold' : 'bg-blue-50 text-blue-800 border-l-2 border-blue-500');
-                        dayHtml += `<div class="text-[0.65rem] p-1 mb-1 rounded truncate shadow-sm ${style}">${t.title}</div>`;
+                    db.tasks.filter(t => t.start_date && t.start_date.includes(dateStr)).forEach(t => {
+                        const style = t.status === '종료' ? 'bg-gray-100 text-gray-400 line-through border-l-2 border-gray-300' : (t.is_starred ? 'bg-yellow-100 text-yellow-800 border-l-2 border-yellow-500 font-bold' : 'bg-blue-50 text-blue-800 border-l-2 border-blue-500');
+                        // 캘린더 일정 클릭 시 팝업 띄우기 연동
+                        dayHtml += `<div onclick="openModal('tasks', ${t.id})" class="text-[0.65rem] p-1 mb-1 rounded truncate shadow-sm cursor-pointer hover:opacity-80 ${style}">${t.title}</div>`;
                     });
                     calHtml += dayHtml + `</div>`;
                 }
                 main.innerHTML = calHtml + `</div>`;
 
             } else if (currentTab === 2) {
-                // 업무목록 탭
+                // 업무목록 탭 (아코디언 적용 완료)
                 html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">📋 전체 업무 목록</h2>`;
                 if(db.tasks.length === 0) html += `<div class="text-gray-400 text-sm text-center py-10 col-span-full">등록된 업무가 없습니다.</div>`;
                 db.tasks.forEach(t => html += renderTaskCard(t));
                 main.innerHTML = html + `</div>`;
 
             } else if (currentTab === 3 || currentTab === 4) {
-                // 이벤트 (활성/종결) 탭 - 아코디언 UI 적용
+                // 이벤트 탭
                 const statusStr = currentTab === 3 ? "활성" : "종결";
                 const icon = currentTab === 3 ? "🔴" : "🟢";
-                
                 const filtered = db.events.filter(e => (e.status || '활성') === statusStr);
                 
                 html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">${icon} ${statusStr} 이벤트 내역</h2>`;
-                
-                if(filtered.length === 0) {
-                    html += `<div class="text-gray-400 text-center py-10 w-full col-span-full">해당 이벤트가 없습니다.</div>`;
-                } else {
+                if(filtered.length === 0) { html += `<div class="text-gray-400 text-center py-10 w-full col-span-full">해당 이벤트가 없습니다.</div>`; } 
+                else {
                     filtered.forEach(e => {
                         let cmtHtml = '';
                         db.comments.filter(c => c.event_id === e.id).forEach(c => {
-                            cmtHtml += `<div class="text-xs text-gray-600 bg-gray-50 p-2 rounded mb-1 border flex justify-between items-center">
-                                            <span>💬 ${c.content}</span>
-                                            <button onclick="deleteItem('event_comments', ${c.id})" class="text-red-400 hover:text-red-600 font-bold ml-2">&times;</button>
-                                        </div>`;
+                            cmtHtml += `
+                                <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded mb-1 border" id="cmt_view_${c.id}">
+                                    <div class="flex justify-between items-center mb-1">
+                                        <span class="font-bold text-blue-800">${c.user_email.split('@')[0]}</span>
+                                        <div class="flex gap-2">
+                                            <button onclick="toggleCommentEdit(${c.id})" class="text-gray-400 hover:text-blue-500">✏️</button>
+                                            <button onclick="deleteItem('event_comments', ${c.id})" class="text-gray-400 hover:text-red-500">✖</button>
+                                        </div>
+                                    </div>
+                                    <div id="cmt_text_${c.id}" class="whitespace-pre-wrap">${c.content}</div>
+                                    <div class="text-[0.65rem] text-gray-400 mt-1">${formatDate(c.created_at)}</div>
+                                </div>
+                                <div id="cmt_edit_box_${c.id}" class="hidden bg-white p-2 border rounded mb-1">
+                                    <textarea id="cmt_edit_input_${c.id}" class="w-full border p-1 text-xs rounded">${c.content}</textarea>
+                                    <div class="flex justify-end gap-1 mt-1">
+                                        <button onclick="toggleCommentEdit(${c.id})" class="px-2 py-1 bg-gray-200 text-xs rounded">취소</button>
+                                        <button onclick="updateComment(${c.id})" class="px-2 py-1 bg-blue-500 text-white text-xs rounded">저장</button>
+                                    </div>
+                                </div>`;
                         });
 
-                        const btnAction = currentTab === 3 ? 
-                            `<button onclick="updateItem('events', ${e.id}, {status:'종결'})" class="w-full bg-green-500 text-white text-sm py-2 rounded font-bold mt-3 hover:bg-green-600">이 이벤트 종결하기</button>` :
-                            `<button onclick="updateItem('events', ${e.id}, {status:'활성'})" class="w-full bg-gray-500 text-white text-sm py-2 rounded font-bold mt-3 hover:bg-gray-600">활성 상태로 되돌리기</button>`;
+                        const btnAction = currentTab === 3 ? `<button onclick="updateItem('events', ${e.id}, {status:'종결'})" class="w-full bg-green-500 text-white text-sm py-2 rounded font-bold mt-3">이 이벤트 종결하기</button>` : `<button onclick="updateItem('events', ${e.id}, {status:'활성'})" class="w-full bg-gray-500 text-white text-sm py-2 rounded font-bold mt-3">활성 상태로 되돌리기</button>`;
 
                         html += `
                             <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-3">
-                                <div class="p-4 cursor-pointer hover:bg-gray-50 flex justify-between items-center" onclick="toggleAccordion(${e.id})">
+                                <div class="p-4 cursor-pointer hover:bg-gray-50 flex justify-between items-center" onclick="toggleAccordion('event_detail_${e.id}')">
                                     <div class="font-bold text-gray-800 text-sm truncate">
                                         ${icon} <span class="text-blue-600 ml-1 mr-2">[${e.event_date || ''}]</span> ${e.title}
                                     </div>
-                                    <span id="arrow_${e.id}" class="text-gray-400 text-xs ml-2">▼</span>
+                                    <span class="text-gray-400 text-xs ml-2">▼</span>
                                 </div>
                                 
-                                <div id="detail_${e.id}" class="hidden p-4 border-t bg-gray-50">
-                                    <p class="text-sm text-gray-700 my-2"><strong>초기 증상:</strong> ${e.content}</p>
-                                    <div class="my-3 space-y-1">${cmtHtml}</div>
-                                    ${currentTab === 3 ? `<div class="flex gap-2">
-                                        <input type="text" id="cmt_${e.id}" placeholder="조치 내역 기록..." class="flex-1 border p-2 text-sm rounded outline-none focus:border-blue-500">
-                                        <button onclick="addComment(${e.id})" class="bg-blue-600 text-white px-3 rounded text-sm font-bold hover:bg-blue-700">등록</button>
+                                <div id="event_detail_${e.id}" class="hidden p-4 border-t bg-gray-50">
+                                    <div class="flex justify-between border-b pb-2 mb-2">
+                                        <p class="text-xs text-gray-500">작성자: ${e.user_email.split('@')[0]} | 등록일: ${formatDate(e.created_at)}</p>
+                                        <div class="flex gap-2">
+                                            <button onclick="openModal('events', ${e.id})" class="text-xs text-blue-500 hover:underline">수정</button>
+                                            <button onclick="deleteItem('events', ${e.id})" class="text-xs text-red-500 hover:underline">삭제</button>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm text-gray-800 my-3 whitespace-pre-wrap leading-relaxed border-l-2 border-gray-300 pl-2"><strong>초기 증상:</strong>\n${e.content}</p>
+                                    
+                                    <div class="my-3 p-3 bg-gray-100 border border-dashed border-gray-300 rounded text-center text-xs text-gray-500">
+                                        📷 사진 첨부 영역 (클라우드 연동 후 활성화 예정)
+                                    </div>
+
+                                    <div class="my-4 space-y-2 bg-white p-2 rounded border">${cmtHtml}</div>
+                                    ${currentTab === 3 ? `<div class="flex gap-2 mt-2">
+                                        <textarea id="cmt_new_${e.id}" placeholder="진행 상황/조치 내역 기록..." class="flex-1 border p-2 text-sm rounded outline-none h-10"></textarea>
+                                        <button onclick="addComment(${e.id})" class="bg-blue-600 text-white px-3 rounded text-sm font-bold">등록</button>
                                     </div>` : ''}
                                     ${btnAction}
                                 </div>
-                            </div>
-                        `;
+                            </div>`;
                     });
                 }
                 main.innerHTML = html + `</div>`;
-
-            } else if (currentTab === 5) {
-                // 자료실 탭
-                main.innerHTML = `<div class="text-center py-20 text-gray-500 w-full col-span-full">
-                    <span class="text-4xl mb-3 block">📁</span>
-                    자료실 (도면/매뉴얼)<br>파일 저장을 위한 클라우드 스토리지 연동 대기 중입니다.
-                </div>`;
-            } else if (currentTab === 6) {
-                // 보고서 탭
-                main.innerHTML = `<div class="text-center py-20 text-gray-500 w-full col-span-full">
-                    <span class="text-4xl mb-3 block">📝</span>
-                    <strong>보고서 자동 생성 기능</strong>은<br>데이터가 쌓인 후 2단계 고도화에서 연동될 예정입니다.
-                </div>`;
-            } else if (currentTab === 7) {
-                // 앨범 탭
-                main.innerHTML = `<div class="text-center py-20 text-gray-500 w-full col-span-full">
-                    <span class="text-4xl mb-3 block">🖼️</span>
-                    앨범 (현장 사진)<br>이미지 저장을 위한 클라우드 스토리지 연동 대기 중입니다.
-                </div>`;
+            } else {
+                main.innerHTML = `<div class="text-center py-20 text-gray-400 w-full col-span-full">아직 개발 중인 메뉴입니다.</div>`;
             }
         }
 
-        // 업무카드 컴포넌트 렌더링
+        // 업무카드 렌더링 (아코디언 적용)
         function renderTaskCard(t) {
             const isClosed = t.status === '종료';
-            const titleStyle = isClosed ? "text-gray-400 line-through" : "text-gray-800";
             return `
-                <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                    <div class="flex justify-between items-start mb-2">
-                        <span class="bg-blue-100 text-blue-800 text-[0.7rem] px-2 py-0.5 rounded-md font-bold">[${t.category || '일반'}] ${t.date_type || '특정날짜'} ${t.start_date || ''}</span>
+                <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-3 overflow-hidden">
+                    <div class="p-4 cursor-pointer hover:bg-gray-50 flex flex-col" onclick="toggleAccordion('task_detail_${t.id}')">
+                        <div class="flex justify-between items-start mb-1">
+                            <span class="bg-blue-100 text-blue-800 text-[0.7rem] px-2 py-0.5 rounded-md font-bold">[${t.category || '일반'}] ${t.date_type}: ${t.start_date || ''}</span>
+                            <span class="text-gray-400 text-xs">▼</span>
+                        </div>
+                        <h3 class="font-bold text-base ${isClosed ? 'text-gray-400 line-through' : 'text-gray-800'}">${t.title}</h3>
                     </div>
-                    <h3 class="font-extrabold ${titleStyle} text-base mb-1">${t.title}</h3>
-                    <p class="text-sm text-gray-600 mb-3">${t.content || ''}</p>
-                    <div class="flex gap-2 bg-gray-50 p-2 rounded-lg border">
-                        <button onclick="updateItem('tasks', ${t.id}, {is_starred: ${!t.is_starred}})" class="flex-1 py-1 bg-white border rounded text-sm hover:bg-gray-100 shadow-sm">${t.is_starred ? '⭐ 해제' : '☆ 중요'}</button>
-                        ${!isClosed ? 
-                            `<button onclick="updateItem('tasks', ${t.id}, {status: '종료'})" class="flex-1 py-1 bg-white border rounded text-sm text-green-600 font-bold hover:bg-gray-100 shadow-sm">✔️ 종료</button>` : 
-                            `<button onclick="updateItem('tasks', ${t.id}, {status: '활성'})" class="flex-1 py-1 bg-white border rounded text-sm text-blue-600 font-bold hover:bg-gray-100 shadow-sm">🔄 복구</button>`
-                        }
-                        <button onclick="deleteItem('tasks', ${t.id})" class="flex-1 py-1 bg-white border rounded text-sm text-red-500 hover:bg-red-50 shadow-sm">🗑️ 삭제</button>
+                    <div id="task_detail_${t.id}" class="hidden p-4 border-t bg-gray-50">
+                        <div class="text-xs text-gray-500 mb-3 border-b pb-2">작성: ${t.user_email.split('@')[0]} | 등록: ${formatDate(t.created_at)}</div>
+                        <p class="text-sm text-gray-700 mb-4 whitespace-pre-wrap leading-relaxed">${t.content || '내용 없음'}</p>
+                        <div class="flex gap-2 bg-white p-2 rounded-lg border">
+                            <button onclick="updateItem('tasks', ${t.id}, {is_starred: ${!t.is_starred}})" class="flex-1 py-1 border rounded text-xs hover:bg-gray-100">${t.is_starred ? '⭐ 해제' : '☆ 중요'}</button>
+                            <button onclick="openModal('tasks', ${t.id})" class="flex-1 py-1 border rounded text-xs text-blue-600 hover:bg-blue-50">✏️ 수정</button>
+                            ${!isClosed ? `<button onclick="updateItem('tasks', ${t.id}, {status: '종료'})" class="flex-1 py-1 border rounded text-xs text-green-600 font-bold hover:bg-green-50">✔️ 종료</button>` : `<button onclick="updateItem('tasks', ${t.id}, {status: '활성'})" class="flex-1 py-1 border rounded text-xs text-blue-600 font-bold hover:bg-blue-50">🔄 복구</button>`}
+                            <button onclick="deleteItem('tasks', ${t.id})" class="flex-1 py-1 border rounded text-xs text-red-500 hover:bg-red-50">🗑️ 삭제</button>
+                        </div>
                     </div>
-                </div>
-            `;
+                </div>`;
         }
 
-        // 입력 팝업창 띄우기
-        function openAddModal() {
+        // 기간 날짜 UI 토글
+        function toggleDateInput() {
+            const val = document.getElementById('m_dtype').value;
+            if(val === '기간') {
+                document.getElementById('date_single').classList.add('hidden');
+                document.getElementById('date_range').classList.remove('hidden');
+            } else {
+                document.getElementById('date_single').classList.remove('hidden');
+                document.getElementById('date_range').classList.add('hidden');
+            }
+        }
+
+        // 모달 열기 (등록 및 수정 통합)
+        function openModal(forceTable = null, editId = null) {
+            editMode = editId ? { table: forceTable, id: editId } : null;
+            const table = forceTable || (currentTab === 0 ? 'notices' : (currentTab === 3 || currentTab === 4) ? 'events' : 'tasks');
             const body = document.getElementById('modalBody');
-            let titleText = "새 업무 등록";
-            
-            if (currentTab === 0) {
-                titleText = "새 중요알림 등록";
-                body.innerHTML = `<textarea id="m_content" class="w-full border p-3 rounded-lg h-32 outline-none focus:ring-2 focus:ring-blue-500" placeholder="알림 내용을 입력하세요"></textarea>`;
-            } else if (currentTab === 3 || currentTab === 4) {
-                titleText = "새 이벤트 등록";
+            let item = editId ? db[table].find(x => x.id === editId) : {};
+
+            document.getElementById('modalTitle').innerText = editId ? "내용 수정하기" : "새로 등록하기";
+
+            if (table === 'notices') {
+                body.innerHTML = `<textarea id="m_content" class="w-full border p-3 rounded-lg h-32 outline-none focus:ring-2 focus:ring-blue-500" placeholder="중요알림 내용">${item.content || ''}</textarea>`;
+            } else if (table === 'events') {
                 body.innerHTML = `
-                    <input type="date" id="m_date" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
-                    <input type="text" id="m_title" placeholder="이벤트 제목" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
-                    <textarea id="m_content" class="w-full border p-3 rounded-lg h-24 outline-none focus:ring-2 focus:ring-blue-500" placeholder="초기 증상 및 현상"></textarea>`;
-            } else if (currentTab === 1 || currentTab === 2) {
-                titleText = "새 업무 카드 등록";
+                    <input type="date" id="m_date" value="${item.event_date || ''}" class="w-full border p-3 rounded-lg outline-none mb-2">
+                    <input type="text" id="m_title" value="${item.title || ''}" placeholder="이벤트 제목" class="w-full border p-3 rounded-lg outline-none mb-2">
+                    <textarea id="m_content" class="w-full border p-3 rounded-lg h-40 outline-none focus:ring-2 focus:ring-blue-500" placeholder="초기 증상 및 현상을 자세히 적어주세요">${item.content || ''}</textarea>`;
+            } else if (table === 'tasks') {
+                const sDate = item.start_date || '';
+                const isRange = sDate.includes('~');
+                const d1 = isRange ? sDate.split(' ~ ')[0] : sDate;
+                const d2 = isRange ? sDate.split(' ~ ')[1] : '';
+                
                 body.innerHTML = `
-                    <div class="flex gap-2">
-                        <input type="text" id="m_title" placeholder="업무 제목" class="w-2/3 border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                    <div class="flex gap-2 mb-2">
+                        <input type="text" id="m_title" value="${item.title || ''}" placeholder="업무 제목" class="w-2/3 border p-3 rounded-lg outline-none">
                         <select id="m_cat" class="w-1/3 border p-3 rounded-lg outline-none"><option>일반</option><option>점검</option><option>자체</option><option>외주</option><option>제출</option><option>보고</option></select>
                     </div>
-                    <div class="flex gap-2">
-                        <select id="m_dtype" class="w-1/3 border p-3 rounded-lg outline-none"><option>특정날짜</option><option>기간</option><option>기한</option></select>
-                        <input type="date" id="m_date" class="w-2/3 border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                    <div class="flex gap-2 mb-2">
+                        <select id="m_dtype" onchange="toggleDateInput()" class="w-1/3 border p-3 rounded-lg outline-none"><option>특정날짜</option><option>기간</option><option>기한</option></select>
+                        <div id="date_single" class="w-2/3"><input type="date" id="m_date1" value="${d1}" class="w-full border p-3 rounded-lg outline-none"></div>
+                        <div id="date_range" class="w-2/3 hidden flex items-center gap-1"><input type="date" id="m_date_start" value="${d1}" class="w-1/2 border p-2 rounded text-sm"><span class="text-gray-400">~</span><input type="date" id="m_date_end" value="${d2}" class="w-1/2 border p-2 rounded text-sm"></div>
                     </div>
-                    <textarea id="m_content" class="w-full border p-3 rounded-lg h-24 outline-none focus:ring-2 focus:ring-blue-500" placeholder="상세 업무 내용"></textarea>`;
-            } else {
-                alert("이 탭에서는 아직 데이터를 등록할 수 없습니다.");
-                return;
+                    <textarea id="m_content" class="w-full border p-3 rounded-lg h-32 outline-none focus:ring-2 focus:ring-blue-500" placeholder="상세 업무 내용">${item.content || ''}</textarea>`;
+                
+                if(item.category) document.getElementById('m_cat').value = item.category;
+                if(item.date_type) { document.getElementById('m_dtype').value = item.date_type; toggleDateInput(); }
             }
-            
-            document.getElementById('modalTitle').innerText = titleText;
-            document.getElementById('addModal').classList.remove('hidden');
+            document.getElementById('actionModal').classList.remove('hidden');
         }
 
-        // 팝업창에서 저장버튼 클릭 시
+        function closeModal() { document.getElementById('actionModal').classList.add('hidden'); editMode = null; }
+
         async function submitData() {
-            let table = currentTab === 0 ? 'notices' : (currentTab === 3 || currentTab === 4) ? 'events' : 'tasks';
-            let payload = { user_email: DEFAULT_EMAIL };
-            
-            if (table === 'notices') {
-                payload.content = document.getElementById('m_content').value;
-            } else if (table === 'events') {
+            const table = editMode ? editMode.table : (document.getElementById('m_cat') ? 'tasks' : document.getElementById('m_date') ? 'events' : 'notices');
+            let payload = editMode ? {} : { user_email: DEFAULT_EMAIL };
+
+            if(table === 'notices') payload.content = document.getElementById('m_content').value;
+            else if(table === 'events') {
                 payload.event_date = document.getElementById('m_date').value;
                 payload.title = document.getElementById('m_title').value;
                 payload.content = document.getElementById('m_content').value;
-                payload.status = "활성";
             } else {
                 payload.title = document.getElementById('m_title').value;
                 payload.category = document.getElementById('m_cat').value;
                 payload.date_type = document.getElementById('m_dtype').value;
-                payload.start_date = document.getElementById('m_date').value;
                 payload.content = document.getElementById('m_content').value;
-                payload.is_starred = false;
-                payload.status = "활성";
+                if(payload.date_type === '기간') payload.start_date = document.getElementById('m_date_start').value + " ~ " + document.getElementById('m_date_end').value;
+                else payload.start_date = document.getElementById('m_date1').value;
             }
 
             try {
-                await fetch(`/api/${table}`, { 
-                    method: 'POST', 
-                    headers: {'Content-Type':'application/json'}, 
-                    body: JSON.stringify(payload) 
-                });
-                document.getElementById('addModal').classList.add('hidden');
-                initApp(); // 새로고침
-            } catch (e) {
-                alert("데이터 저장에 실패했습니다.");
-            }
+                if(editMode) await fetch(`/api/${table}/${editMode.id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+                else await fetch(`/api/${table}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+                closeModal(); initApp();
+            } catch(e) { alert("저장 실패"); }
         }
 
-        // 이벤트에 댓글 달기
+        // 댓글 관련 인라인 수정
+        function toggleCommentEdit(id) {
+            document.getElementById(`cmt_view_${id}`).classList.toggle('hidden');
+            document.getElementById(`cmt_edit_box_${id}`).classList.toggle('hidden');
+        }
+        async function updateComment(id) {
+            const val = document.getElementById(`cmt_edit_input_${id}`).value;
+            await fetch(`/api/event_comments/${id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({content: val}) });
+            initApp();
+        }
         async function addComment(eventId) {
-            const inputField = document.getElementById(`cmt_${eventId}`);
-            const content = inputField.value;
-            if(!content) return;
-            
-            try {
-                await fetch('/api/event_comments', { 
-                    method: 'POST', 
-                    headers: {'Content-Type':'application/json'}, 
-                    body: JSON.stringify({ event_id: eventId, content: content, user_email: DEFAULT_EMAIL }) 
-                });
-                inputField.value = ''; // 입력창 비우기
-                initApp();
-            } catch (e) {
-                alert("댓글 등록에 실패했습니다.");
-            }
+            const val = document.getElementById(`cmt_new_${eventId}`).value;
+            if(val) { await fetch('/api/event_comments', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({event_id: eventId, content: val, user_email: DEFAULT_EMAIL}) }); initApp(); }
         }
 
-        // 데이터 업데이트 (종결처리, 별표 등)
-        async function updateItem(table, id, data) {
-            try {
-                await fetch(`/api/${table}/${id}`, { 
-                    method: 'PATCH', 
-                    headers: {'Content-Type':'application/json'}, 
-                    body: JSON.stringify(data) 
-                });
-                initApp();
-            } catch (e) {
-                alert("수정에 실패했습니다.");
-            }
-        }
+        async function updateItem(t, id, data) { await fetch(`/api/${t}/${id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) }); initApp(); }
+        async function deleteItem(t, id) { if(confirm("삭제하시겠습니까?")) { await fetch(`/api/${t}/${id}`, { method: 'DELETE' }); initApp(); } }
 
-        // 데이터 삭제
-        async function deleteItem(table, id) {
-            if(!confirm("정말 삭제하시겠습니까?")) return;
-            try {
-                await fetch(`/api/${table}/${id}`, { method: 'DELETE' });
-                initApp();
-            } catch (e) {
-                alert("삭제에 실패했습니다.");
-            }
-        }
-
-        // 스크립트가 로드되면 앱 초기화 시작
         window.onload = initApp;
     </script>
 </body>
