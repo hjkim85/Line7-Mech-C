@@ -10,7 +10,6 @@
     <meta name="theme-color" content="#1E3A8A">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* 모바일 스와이프 탭 & 스크롤바 숨기기 */
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
         .tab-btn { white-space: nowrap; padding: 12px 16px; font-weight: 700; color: #94a3b8; border-bottom: 3px solid transparent; transition: all 0.2s; }
@@ -21,7 +20,7 @@
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
-    <div class="max-w-md mx-auto bg-white min-h-screen shadow-lg relative pb-20">
+    <div class="max-w-5xl mx-auto bg-white min-h-screen shadow-lg relative pb-20">
         <header class="bg-blue-900 text-white p-4 flex items-center justify-center shadow-md sticky top-0 z-20">
             <img src="/icon.png" class="w-8 h-8 mr-3 rounded-md object-cover bg-white">
             <h1 class="text-xl font-bold tracking-wider">Line7-Mech-C</h1>
@@ -34,24 +33,25 @@
             <button onclick="switchTab(3)" class="tab-btn">🚨 이벤트</button>
             <button onclick="switchTab(4)" class="tab-btn">✅ 종결이벤트</button>
             <button onclick="switchTab(5)" class="tab-btn">📁 자료실</button>
+            <button onclick="switchTab(6)" class="tab-btn">📝 보고서</button>
+            <button onclick="switchTab(7)" class="tab-btn">🖼️ 앨범</button>
         </nav>
 
         <main class="p-4" id="main-content">
-            <div class="text-center py-20 text-gray-400 animate-pulse font-bold">시스템 로딩 중... 🚀</div>
+            <div class="text-center py-20 text-gray-400 font-bold">시스템 로딩 중... 🚀</div>
         </main>
 
-        <button onclick="openAddModal()" class="fixed bottom-6 right-6 lg:right-[calc(50%-12rem)] bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl text-3xl flex items-center justify-center hover:bg-blue-700 z-30 transition transform hover:scale-105">
+        <button onclick="openAddModal()" class="fixed bottom-6 right-6 lg:right-[calc(50%-23rem)] bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl text-3xl flex items-center justify-center hover:bg-blue-700 z-30 transition transform hover:scale-105">
             +
         </button>
 
         <div id="addModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-40 flex items-end justify-center sm:items-center">
-            <div class="bg-white w-full max-w-md sm:rounded-xl rounded-t-2xl p-5 transform transition-all pb-8">
+            <div class="bg-white w-full max-w-md sm:rounded-xl rounded-t-2xl p-5 transform transition-all pb-8 shadow-2xl">
                 <div class="flex justify-between items-center mb-4 border-b pb-2">
                     <h3 class="text-lg font-bold text-gray-800" id="modalTitle">새로 등록하기</h3>
-                    <button onclick="document.getElementById('addModal').classList.add('hidden')" class="text-gray-400 hover:text-red-500 text-2xl">&times;</button>
+                    <button onclick="document.getElementById('addModal').classList.add('hidden')" class="text-gray-400 hover:text-red-500 text-2xl font-bold">&times;</button>
                 </div>
-                <div id="modalBody" class="space-y-3">
-                    </div>
+                <div id="modalBody" class="space-y-3"></div>
                 <button onclick="submitData()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg mt-4 shadow-md hover:bg-blue-700">저장하기</button>
             </div>
         </div>
@@ -64,7 +64,7 @@
         let calMonth = new Date().getMonth() + 1;
         const DEFAULT_EMAIL = "c_team@incheon.go.kr";
 
-        // 시스템 시작 시 모든 데이터 불러오기
+        // 초기 데이터 로드
         async function initApp() {
             try {
                 const [nRes, tRes, eRes, cRes] = await Promise.all([
@@ -81,9 +81,9 @@
             } catch (e) { alert("서버 통신 오류가 발생했습니다."); }
         }
 
-        // 4조 2교대 8일 주기 교대조 계산 함수 (2026-06-01 B/D 기준)
+        // 4조 2교대 8일 주기 계산
         function getShift(year, month, day) {
-            const baseDate = new Date(2026, 5, 1); // JS는 월이 0부터 시작
+            const baseDate = new Date(2026, 5, 1);
             const targetDate = new Date(year, month - 1, day);
             const diffTime = targetDate - baseDate;
             const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
@@ -100,43 +100,58 @@
             renderTab();
         }
 
+        // 이벤트 아코디언 접기/펼치기 함수
+        function toggleAccordion(id) {
+            const detailDiv = document.getElementById(`detail_${id}`);
+            const arrowSpan = document.getElementById(`arrow_${id}`);
+            if (detailDiv.classList.contains('hidden')) {
+                detailDiv.classList.remove('hidden');
+                arrowSpan.innerText = '▲';
+            } else {
+                detailDiv.classList.add('hidden');
+                arrowSpan.innerText = '▼';
+            }
+        }
+
+        // 탭별 화면 렌더링
         function renderTab() {
             const main = document.getElementById('main-content');
-            main.innerHTML = '';
+            let html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`; 
             
             if (currentTab === 0) {
-                // 1. 중요알림 탭
-                let html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1">📌 자체 중요알림</h2>`;
+                // 중요알림 탭
+                html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">📌 자체 중요알림</h2>`;
                 db.notices.forEach(n => {
-                    html += `<div class="bg-blue-50 p-3 rounded-lg border-l-4 border-blue-500 mb-3 text-sm flex justify-between items-center shadow-sm">
+                    html += `<div class="bg-blue-50 p-3 rounded-lg border-l-4 border-blue-500 text-sm flex justify-between items-center shadow-sm">
                                 <span class="font-bold text-gray-800">${n.content}</span>
                                 <button onclick="deleteItem('notices', ${n.id})" class="text-gray-400 hover:text-red-500 ml-2">🗑️</button>
                              </div>`;
                 });
-                html += `<h2 class="font-bold text-orange-600 mt-6 mb-3 border-b pb-1">⭐ 중요 표시된 현장 업무</h2>`;
+                
+                html += `<h2 class="font-bold text-orange-600 mt-6 mb-3 border-b pb-1 col-span-full">⭐ 중요 표시된 현장 업무</h2>`;
                 const starred = db.tasks.filter(t => t.is_starred);
-                if(starred.length === 0) html += `<div class="text-gray-400 text-sm">중요 표시된 업무가 없습니다.</div>`;
+                if(starred.length === 0) html += `<div class="text-gray-400 text-sm col-span-full">중요 표시된 업무가 없습니다.</div>`;
                 starred.forEach(t => html += renderTaskCard(t));
-                main.innerHTML = html;
+                main.innerHTML = `<div class="flex flex-col space-y-3 w-full col-span-full">` + html + `</div>`;
 
             } else if (currentTab === 1) {
-                // 2. 업무캘린더 탭
+                // 달력 탭
                 const firstDay = new Date(calYear, calMonth - 1, 1).getDay();
                 const daysInMonth = new Date(calYear, calMonth, 0).getDate();
                 const today = new Date();
                 
-                let html = `
-                    <div class="flex justify-between items-center mb-4 bg-white p-2 rounded-lg shadow-sm border">
+                let calHtml = `
+                    <div class="flex justify-between items-center mb-4 bg-white p-2 rounded-lg shadow-sm border col-span-full w-full max-w-3xl mx-auto">
                         <button onclick="calMonth--; if(calMonth<1){calMonth=12; calYear--;} renderTab();" class="p-2 bg-gray-100 rounded hover:bg-gray-200">◀</button>
                         <h3 class="font-black text-lg">${calYear}년 ${calMonth}월</h3>
                         <button onclick="calMonth++; if(calMonth>12){calMonth=1; calYear++;} renderTab();" class="p-2 bg-gray-100 rounded hover:bg-gray-200">▶</button>
                     </div>
-                    <div class="cal-grid rounded-xl overflow-hidden shadow-sm">
+                    <div class="cal-grid rounded-xl overflow-hidden shadow-sm col-span-full w-full max-w-3xl mx-auto">
                         <div class="cal-header text-red-500">일</div><div class="cal-header">월</div><div class="cal-header">화</div>
                         <div class="cal-header">수</div><div class="cal-header">목</div><div class="cal-header">금</div><div class="cal-header text-blue-500">토</div>
                 `;
                 
-                for (let i = 0; i < firstDay; i++) html += `<div class="cal-cell bg-gray-50"></div>`;
+                for (let i = 0; i < firstDay; i++) calHtml += `<div class="cal-cell bg-gray-50"></div>`;
                 
                 for (let day = 1; day <= daysInMonth; day++) {
                     const dateStr = `${calYear}-${String(calMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -154,67 +169,95 @@
                     db.tasks.filter(t => t.start_date === dateStr).forEach(t => {
                         const style = t.status === '종료' ? 'bg-gray-100 text-gray-400 line-through border-l-2 border-gray-300' : 
                                       (t.is_starred ? 'bg-yellow-100 text-yellow-800 border-l-2 border-yellow-500 font-bold' : 'bg-blue-50 text-blue-800 border-l-2 border-blue-500');
-                        dayHtml += `<div class="text-[0.65rem] p-1 mb-1 rounded truncate shadow-sm cursor-pointer ${style}">${t.title}</div>`;
+                        dayHtml += `<div class="text-[0.65rem] p-1 mb-1 rounded truncate shadow-sm ${style}">${t.title}</div>`;
                     });
-                    html += dayHtml + `</div>`;
+                    calHtml += dayHtml + `</div>`;
+                }
+                main.innerHTML = calHtml + `</div>`;
+
+            } else if (currentTab === 2) {
+                // 업무목록 탭
+                html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">📋 전체 업무 목록</h2>`;
+                if(db.tasks.length === 0) html += `<div class="text-gray-400 text-sm text-center py-10 col-span-full">등록된 업무가 없습니다.</div>`;
+                db.tasks.forEach(t => html += renderTaskCard(t));
+                main.innerHTML = html + `</div>`;
+
+            } else if (currentTab === 3 || currentTab === 4) {
+                // 이벤트 (활성/종결) 탭 - 아코디언 UI 적용
+                const statusStr = currentTab === 3 ? "활성" : "종결";
+                const icon = currentTab === 3 ? "🔴" : "🟢";
+                
+                const filtered = db.events.filter(e => (e.status || '활성') === statusStr);
+                
+                html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">${icon} ${statusStr} 이벤트 내역</h2>`;
+                
+                if(filtered.length === 0) {
+                    html += `<div class="text-gray-400 text-center py-10 w-full col-span-full">해당 이벤트가 없습니다.</div>`;
+                } else {
+                    filtered.forEach(e => {
+                        let cmtHtml = '';
+                        db.comments.filter(c => c.event_id === e.id).forEach(c => {
+                            cmtHtml += `<div class="text-xs text-gray-600 bg-gray-50 p-2 rounded mb-1 border flex justify-between items-center">
+                                            <span>💬 ${c.content}</span>
+                                            <button onclick="deleteItem('event_comments', ${c.id})" class="text-red-400 hover:text-red-600 font-bold ml-2">&times;</button>
+                                        </div>`;
+                        });
+
+                        const btnAction = currentTab === 3 ? 
+                            `<button onclick="updateItem('events', ${e.id}, {status:'종결'})" class="w-full bg-green-500 text-white text-sm py-2 rounded font-bold mt-3 hover:bg-green-600">이 이벤트 종결하기</button>` :
+                            `<button onclick="updateItem('events', ${e.id}, {status:'활성'})" class="w-full bg-gray-500 text-white text-sm py-2 rounded font-bold mt-3 hover:bg-gray-600">활성 상태로 되돌리기</button>`;
+
+                        html += `
+                            <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-3">
+                                <div class="p-4 cursor-pointer hover:bg-gray-50 flex justify-between items-center" onclick="toggleAccordion(${e.id})">
+                                    <div class="font-bold text-gray-800 text-sm truncate">
+                                        ${icon} <span class="text-blue-600 ml-1 mr-2">[${e.event_date || ''}]</span> ${e.title}
+                                    </div>
+                                    <span id="arrow_${e.id}" class="text-gray-400 text-xs ml-2">▼</span>
+                                </div>
+                                
+                                <div id="detail_${e.id}" class="hidden p-4 border-t bg-gray-50">
+                                    <p class="text-sm text-gray-700 my-2"><strong>초기 증상:</strong> ${e.content}</p>
+                                    <div class="my-3 space-y-1">${cmtHtml}</div>
+                                    ${currentTab === 3 ? `<div class="flex gap-2">
+                                        <input type="text" id="cmt_${e.id}" placeholder="조치 내역 기록..." class="flex-1 border p-2 text-sm rounded outline-none focus:border-blue-500">
+                                        <button onclick="addComment(${e.id})" class="bg-blue-600 text-white px-3 rounded text-sm font-bold hover:bg-blue-700">등록</button>
+                                    </div>` : ''}
+                                    ${btnAction}
+                                </div>
+                            </div>
+                        `;
+                    });
                 }
                 main.innerHTML = html + `</div>`;
 
-            } else if (currentTab === 2) {
-                // 3. 업무목록 탭
-                let html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1">📋 전체 업무 목록</h2>`;
-                if(db.tasks.length === 0) html += `<div class="text-gray-400 text-sm text-center py-10">등록된 업무가 없습니다.</div>`;
-                db.tasks.forEach(t => html += renderTaskCard(t));
-                main.innerHTML = html;
-
-            } else if (currentTab === 3 || currentTab === 4) {
-                // 4. 이벤트 & 5. 종결이벤트 탭
-                const statusStr = currentTab === 3 ? "활성" : "종결";
-                const icon = currentTab === 3 ? "🔴" : "🟢";
-                let html = `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1">${icon} ${statusStr} 이벤트 내역</h2>`;
-                const filtered = db.events.filter(e => (e.status || '활성') === statusStr);
-                
-                if(filtered.length === 0) html += `<div class="text-gray-400 text-sm text-center py-10">해당하는 이벤트가 없습니다.</div>`;
-                
-                filtered.forEach(e => {
-                    let cmtHtml = '';
-                    db.comments.filter(c => c.event_id === e.id).forEach(c => {
-                        cmtHtml += `<div class="text-xs text-gray-600 bg-gray-50 p-2 rounded mb-1 border flex justify-between">
-                                        <span>💬 ${c.content}</span>
-                                        <button onclick="deleteItem('event_comments', ${c.id})" class="text-red-400">✖</button>
-                                    </div>`;
-                    });
-
-                    const btnAction = currentTab === 3 ? 
-                        `<button onclick="updateItem('events', ${e.id}, {status:'종결'})" class="w-full bg-green-500 text-white text-sm py-2 rounded font-bold shadow">이 이벤트 종결하기</button>` :
-                        `<button onclick="updateItem('events', ${e.id}, {status:'활성'})" class="w-full bg-gray-500 text-white text-sm py-2 rounded font-bold shadow">활성 상태로 되돌리기</button>`;
-
-                    html += `
-                        <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
-                            <div class="font-bold text-gray-800 mb-1 border-b pb-2 flex justify-between">
-                                <span>${icon} [${e.event_date || ''}] ${e.title}</span>
-                            </div>
-                            <p class="text-sm text-gray-700 my-2 font-medium">초기 증상: ${e.content}</p>
-                            <div class="my-3 space-y-1">${cmtHtml}</div>
-                            ${currentTab === 3 ? `<div class="flex gap-2 mb-3">
-                                <input type="text" id="cmt_${e.id}" placeholder="조치 내역 기록..." class="flex-1 border p-2 text-sm rounded outline-none focus:border-blue-500">
-                                <button onclick="addComment(${e.id})" class="bg-blue-600 text-white px-3 rounded text-sm font-bold">등록</button>
-                            </div>` : ''}
-                            ${btnAction}
-                        </div>
-                    `;
-                });
-                main.innerHTML = html;
-            } else {
-                main.innerHTML = `<div class="text-center py-20 text-gray-400">구글 클라우드 연동 준비 중입니다. ☁️</div>`;
+            } else if (currentTab === 5) {
+                // 자료실 탭
+                main.innerHTML = `<div class="text-center py-20 text-gray-500 w-full col-span-full">
+                    <span class="text-4xl mb-3 block">📁</span>
+                    자료실 (도면/매뉴얼)<br>파일 저장을 위한 클라우드 스토리지 연동 대기 중입니다.
+                </div>`;
+            } else if (currentTab === 6) {
+                // 보고서 탭
+                main.innerHTML = `<div class="text-center py-20 text-gray-500 w-full col-span-full">
+                    <span class="text-4xl mb-3 block">📝</span>
+                    <strong>보고서 자동 생성 기능</strong>은<br>데이터가 쌓인 후 2단계 고도화에서 연동될 예정입니다.
+                </div>`;
+            } else if (currentTab === 7) {
+                // 앨범 탭
+                main.innerHTML = `<div class="text-center py-20 text-gray-500 w-full col-span-full">
+                    <span class="text-4xl mb-3 block">🖼️</span>
+                    앨범 (현장 사진)<br>이미지 저장을 위한 클라우드 스토리지 연동 대기 중입니다.
+                </div>`;
             }
         }
 
+        // 업무카드 컴포넌트 렌더링
         function renderTaskCard(t) {
             const isClosed = t.status === '종료';
             const titleStyle = isClosed ? "text-gray-400 line-through" : "text-gray-800";
             return `
-                <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-3">
+                <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
                     <div class="flex justify-between items-start mb-2">
                         <span class="bg-blue-100 text-blue-800 text-[0.7rem] px-2 py-0.5 rounded-md font-bold">[${t.category || '일반'}] ${t.date_type || '특정날짜'} ${t.start_date || ''}</span>
                     </div>
@@ -232,19 +275,22 @@
             `;
         }
 
+        // 입력 팝업창 띄우기
         function openAddModal() {
             const body = document.getElementById('modalBody');
-            document.getElementById('modalTitle').innerText = 
-                currentTab === 0 ? "새 중요알림 등록" : currentTab === 3 ? "새 이벤트 발생 등록" : "새 업무 카드 등록";
+            let titleText = "새 업무 등록";
             
-            if(currentTab === 0) {
+            if (currentTab === 0) {
+                titleText = "새 중요알림 등록";
                 body.innerHTML = `<textarea id="m_content" class="w-full border p-3 rounded-lg h-32 outline-none focus:ring-2 focus:ring-blue-500" placeholder="알림 내용을 입력하세요"></textarea>`;
-            } else if(currentTab === 3 || currentTab === 4) {
+            } else if (currentTab === 3 || currentTab === 4) {
+                titleText = "새 이벤트 등록";
                 body.innerHTML = `
                     <input type="date" id="m_date" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
                     <input type="text" id="m_title" placeholder="이벤트 제목" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
                     <textarea id="m_content" class="w-full border p-3 rounded-lg h-24 outline-none focus:ring-2 focus:ring-blue-500" placeholder="초기 증상 및 현상"></textarea>`;
-            } else {
+            } else if (currentTab === 1 || currentTab === 2) {
+                titleText = "새 업무 카드 등록";
                 body.innerHTML = `
                     <div class="flex gap-2">
                         <input type="text" id="m_title" placeholder="업무 제목" class="w-2/3 border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
@@ -255,16 +301,23 @@
                         <input type="date" id="m_date" class="w-2/3 border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
                     </div>
                     <textarea id="m_content" class="w-full border p-3 rounded-lg h-24 outline-none focus:ring-2 focus:ring-blue-500" placeholder="상세 업무 내용"></textarea>`;
+            } else {
+                alert("이 탭에서는 아직 데이터를 등록할 수 없습니다.");
+                return;
             }
+            
+            document.getElementById('modalTitle').innerText = titleText;
             document.getElementById('addModal').classList.remove('hidden');
         }
 
+        // 팝업창에서 저장버튼 클릭 시
         async function submitData() {
-            let table = currentTab === 0 ? 'notices' : currentTab === 3 || currentTab === 4 ? 'events' : 'tasks';
+            let table = currentTab === 0 ? 'notices' : (currentTab === 3 || currentTab === 4) ? 'events' : 'tasks';
             let payload = { user_email: DEFAULT_EMAIL };
             
-            if(table === 'notices') payload.content = document.getElementById('m_content').value;
-            else if(table === 'events') {
+            if (table === 'notices') {
+                payload.content = document.getElementById('m_content').value;
+            } else if (table === 'events') {
                 payload.event_date = document.getElementById('m_date').value;
                 payload.title = document.getElementById('m_title').value;
                 payload.content = document.getElementById('m_content').value;
@@ -279,29 +332,64 @@
                 payload.status = "활성";
             }
 
-            await fetch(`/api/${table}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-            document.getElementById('addModal').classList.add('hidden');
-            initApp();
+            try {
+                await fetch(`/api/${table}`, { 
+                    method: 'POST', 
+                    headers: {'Content-Type':'application/json'}, 
+                    body: JSON.stringify(payload) 
+                });
+                document.getElementById('addModal').classList.add('hidden');
+                initApp(); // 새로고침
+            } catch (e) {
+                alert("데이터 저장에 실패했습니다.");
+            }
         }
 
+        // 이벤트에 댓글 달기
         async function addComment(eventId) {
-            const content = document.getElementById(`cmt_${eventId}`).value;
+            const inputField = document.getElementById(`cmt_${eventId}`);
+            const content = inputField.value;
             if(!content) return;
-            await fetch('/api/event_comments', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ event_id: eventId, content: content, user_email: DEFAULT_EMAIL }) });
-            initApp();
+            
+            try {
+                await fetch('/api/event_comments', { 
+                    method: 'POST', 
+                    headers: {'Content-Type':'application/json'}, 
+                    body: JSON.stringify({ event_id: eventId, content: content, user_email: DEFAULT_EMAIL }) 
+                });
+                inputField.value = ''; // 입력창 비우기
+                initApp();
+            } catch (e) {
+                alert("댓글 등록에 실패했습니다.");
+            }
         }
 
+        // 데이터 업데이트 (종결처리, 별표 등)
         async function updateItem(table, id, data) {
-            await fetch(`/api/${table}/${id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-            initApp();
+            try {
+                await fetch(`/api/${table}/${id}`, { 
+                    method: 'PATCH', 
+                    headers: {'Content-Type':'application/json'}, 
+                    body: JSON.stringify(data) 
+                });
+                initApp();
+            } catch (e) {
+                alert("수정에 실패했습니다.");
+            }
         }
 
+        // 데이터 삭제
         async function deleteItem(table, id) {
             if(!confirm("정말 삭제하시겠습니까?")) return;
-            await fetch(`/api/${table}/${id}`, { method: 'DELETE' });
-            initApp();
+            try {
+                await fetch(`/api/${table}/${id}`, { method: 'DELETE' });
+                initApp();
+            } catch (e) {
+                alert("삭제에 실패했습니다.");
+            }
         }
 
+        // 스크립트가 로드되면 앱 초기화 시작
         window.onload = initApp;
     </script>
 </body>
