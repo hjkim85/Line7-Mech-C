@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+    <!-- ============================================================================== -->
+    <!-- [대단원 1] HTML 기본 구조 및 CSS 스타일링                                       -->
+    <!-- ============================================================================== -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Line7-Mech-C 업무포털</title>
@@ -9,32 +12,34 @@
     <link rel="icon" type="image/png" href="/icon.png">
     <meta name="theme-color" content="#1E3A8A">
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <style>
-        /* 모바일 네비게이션 스크롤바 숨기기 */
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        /* 상단 탭 버튼 디자인 */
-        .tab-btn { 
-            white-space: nowrap; padding: 12px 16px; font-weight: 700; 
-            color: #94a3b8; border-bottom: 3px solid transparent; transition: all 0.2s; 
-        }
+        .tab-btn { white-space: nowrap; padding: 12px 16px; font-weight: 700; color: #94a3b8; border-bottom: 3px solid transparent; transition: all 0.2s; }
         .tab-btn.active { color: #1e3a8a; border-bottom-color: #1e3a8a; }
         
-        /* 캘린더 디자인 */
-        .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0; border: 1px solid #e2e8f0; }
-        .cal-cell { background: white; min-height: 80px; padding: 4px; display: flex; flex-direction: column; }
+        /* [수정 5] 캘린더 레이아웃 붕괴 방지: minmax(0, 1fr) 및 overflow: hidden 적용 */
+        .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; background: #e2e8f0; border: 1px solid #e2e8f0; }
+        .cal-cell { background: white; min-height: 80px; padding: 4px; display: flex; flex-direction: column; overflow: hidden; }
         .cal-header { background: #f8fafc; text-align: center; font-weight: bold; font-size: 0.8rem; padding: 6px 0; }
         
-        /* 멀티라인(줄바꿈) 텍스트 지원 필수 CSS */
         .whitespace-pre-wrap { white-space: pre-wrap; } 
+        
+        /* [수정 2] 읽기 전용(View Mode)일 때의 입력창 디자인 (회색 바탕 처리) */
+        input:disabled, textarea:disabled, select:disabled {
+            background-color: #f8fafc;
+            color: #334155;
+            cursor: not-allowed;
+            border-color: #e2e8f0;
+        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
     
+    <!-- ============================================================================== -->
+    <!-- [대단원 2] 메인 레이아웃 및 네비게이션 영역                                     -->
+    <!-- ============================================================================== -->
     <div class="max-w-5xl mx-auto bg-white min-h-screen shadow-lg relative pb-20">
-        
         <header class="bg-blue-900 text-white p-4 flex items-center justify-center shadow-md sticky top-0 z-20">
             <img src="/icon.png" class="w-8 h-8 mr-3 rounded-md object-cover bg-white">
             <h1 class="text-xl font-bold tracking-wider">Line7-Mech-C</h1>
@@ -59,6 +64,9 @@
             +
         </button>
 
+        <!-- ============================================================================== -->
+        <!-- [대단원 3] 통합 팝업(모달) UI                                                   -->
+        <!-- ============================================================================== -->
         <div id="actionModal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-40 flex items-end justify-center sm:items-center">
             <div class="bg-white w-full max-w-md sm:rounded-xl rounded-t-2xl p-5 transform transition-all pb-8 shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-4 border-b pb-2">
@@ -68,21 +76,22 @@
                 
                 <div id="modalBody" class="space-y-3"></div>
                 
-                <button onclick="submitData()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg mt-4 shadow-md hover:bg-blue-700">
-                    저장하기
-                </button>
+                <!-- [수정 2] 모달창 하단 버튼이 상황(보기/수정/등록)에 따라 동적으로 변하는 공간 -->
+                <div id="modalButtons"></div>
             </div>
         </div>
     </div>
 
+    <!-- ============================================================================== -->
+    <!-- [대단원 4] 자바스크립트: 데이터베이스 통신 및 상태 관리 로직                   -->
+    <!-- ============================================================================== -->
     <script>
-        // [소단원 4-1] 전역 변수 및 날짜 포맷 헬퍼 함수
         let db = { notices: [], tasks: [], events: [], comments: [] };
         let currentTab = 0;
         let calYear = new Date().getFullYear();
         let calMonth = new Date().getMonth() + 1;
-        const DEFAULT_EMAIL = "c_team@incheon.go.kr";
-        let editMode = null; // 수정 모드 시 상태 저장 (예: { table: 'tasks', id: 1 })
+        const DEFAULT_EMAIL = "c_team@incheon.go.kr"; // 구글 로그인 연동 시 이 변수가 실제 사용자로 교체됨
+        let editMode = null; 
 
         function formatDate(dateString) {
             if(!dateString) return '';
@@ -90,7 +99,6 @@
             return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         }
 
-        // [소단원 4-2] 파이썬 백엔드(api/index.py)에서 데이터 싹 가져오기
         async function initApp() {
             try {
                 const [nRes, tRes, eRes, cRes] = await Promise.all([
@@ -100,15 +108,13 @@
                     fetch('/api/event_comments').then(r => r.json())
                 ]);
                 db.notices = nRes.data || [];
-                // 업무목록 정렬 (기한이 임박한 것부터 오름차순 정렬)
                 db.tasks = (tRes.data || []).sort((a, b) => new Date(a.start_date.split('~')[0]) - new Date(b.start_date.split('~')[0]));
                 db.events = eRes.data || [];
                 db.comments = cRes.data || [];
-                renderTab(); // 데이터 로드 완료 후 화면 그리기
+                renderTab(); 
             } catch (e) { console.error("데이터 통신 오류", e); }
         }
 
-        // [소단원 4-3] 4조 2교대 8일 주기 교대조 자동 계산 함수
         function getShift(year, month, day) {
             const baseDate = new Date(2026, 5, 1);
             const targetDate = new Date(year, month - 1, day);
@@ -120,12 +126,9 @@
         // ==============================================================================
         // [대단원 5] 자바스크립트: 화면 UI 렌더링 및 클릭 이벤트 제어                   
         // ==============================================================================
-
-        // [소단원 5-1] 탭 전환 및 아코디언 접기/펼치기 제어
         function switchTab(index) {
             currentTab = index;
             document.querySelectorAll('.tab-btn').forEach((btn, i) => btn.className = `tab-btn ${i === index ? 'active' : ''}`);
-            // 중요알림, 자료실, 보고서, 앨범 탭에서는 전역 하단 + 버튼 숨기기
             document.getElementById('globalAddBtn').style.display = (currentTab === 0 || currentTab > 4) ? 'none' : 'flex';
             renderTab();
         }
@@ -135,15 +138,10 @@
             detailDiv.classList.toggle('hidden');
         }
 
-        // [소단원 5-2] 메인 도화지(main-content)에 현재 탭 화면 그리기
         function renderTab() {
             const main = document.getElementById('main-content');
-            // PC 화면을 고려하여 넓은 화면에서는 2단(2열)으로 표시되게 하는 그리드
             let html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`; 
             
-            // -----------------------------------------------------------------
-            // (1) 중요알림 탭 렌더링
-            // -----------------------------------------------------------------
             if (currentTab === 0) {
                 html += `
                     <div class="col-span-full flex justify-between items-center mb-3 border-b pb-1">
@@ -169,17 +167,11 @@
                 
                 html += `<h2 class="font-bold text-orange-600 mt-6 mb-3 border-b pb-1 col-span-full">⭐ 중요 표시된 현장 업무</h2>`;
                 const starred = db.tasks.filter(t => t.is_starred && t.status !== '종료');
-                if(starred.length === 0) {
-                    html += `<div class="text-gray-400 text-sm col-span-full">중요 표시된 진행중 업무가 없습니다.</div>`;
-                }
+                if(starred.length === 0) html += `<div class="text-gray-400 text-sm col-span-full">중요 표시된 진행중 업무가 없습니다.</div>`;
                 starred.forEach(t => { html += renderTaskCard(t); });
                 
                 main.innerHTML = `<div class="flex flex-col space-y-3 w-full col-span-full">` + html + `</div>`;
             } 
-            
-            // -----------------------------------------------------------------
-            // (2) 캘린더 탭 렌더링
-            // -----------------------------------------------------------------
             else if (currentTab === 1) {
                 const firstDay = new Date(calYear, calMonth - 1, 1).getDay();
                 const daysInMonth = new Date(calYear, calMonth, 0).getDate();
@@ -214,42 +206,30 @@
                     
                     db.tasks.filter(t => t.start_date && t.start_date.includes(dateStr)).forEach(t => {
                         const style = t.status === '종료' ? 'bg-gray-100 text-gray-400 line-through border-l-2 border-gray-300' : (t.is_starred ? 'bg-yellow-100 text-yellow-800 border-l-2 border-yellow-500 font-bold' : 'bg-blue-50 text-blue-800 border-l-2 border-blue-500');
-                        // 캘린더 일정 클릭 시 팝업 띄우기 (openModal 연동)
-                        dayHtml += `<div onclick="openModal('tasks', ${t.id})" class="text-[0.65rem] p-1 mb-1 rounded truncate shadow-sm cursor-pointer hover:opacity-80 ${style}">${t.title}</div>`;
+                        // [수정 2] 캘린더 일정 클릭 시 보기 모드(isView = true)로 열리도록 연동
+                        dayHtml += `<div onclick="openModal('tasks', ${t.id}, true)" class="text-[0.65rem] p-1 mb-1 rounded truncate shadow-sm cursor-pointer hover:opacity-80 ${style}">${t.title}</div>`;
                     });
                     calHtml += dayHtml + `</div>`;
                 }
                 main.innerHTML = calHtml + `</div>`;
             } 
-            
-            // -----------------------------------------------------------------
-            // (3) 업무목록 탭 렌더링
-            // -----------------------------------------------------------------
             else if (currentTab === 2) {
                 html += `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">📋 전체 업무 목록</h2>`;
-                if(db.tasks.length === 0) {
-                    html += `<div class="text-gray-400 text-sm text-center py-10 col-span-full">등록된 업무가 없습니다.</div>`;
-                }
+                if(db.tasks.length === 0) html += `<div class="text-gray-400 text-sm text-center py-10 col-span-full">등록된 업무가 없습니다.</div>`;
                 db.tasks.forEach(t => { html += renderTaskCard(t); });
                 main.innerHTML = html + `</div>`;
             } 
-            
-            // -----------------------------------------------------------------
-            // (4) 이벤트 탭 (활성/종결) 렌더링
-            // -----------------------------------------------------------------
             else if (currentTab === 3 || currentTab === 4) {
                 const statusStr = currentTab === 3 ? "활성" : "종결";
                 const icon = currentTab === 3 ? "🔴" : "🟢";
                 const filtered = db.events.filter(e => (e.status || '활성') === statusStr);
                 
                 html += `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">${icon} ${statusStr} 이벤트 내역</h2>`;
-                if(filtered.length === 0) { 
-                    html += `<div class="text-gray-400 text-center py-10 w-full col-span-full">해당 이벤트가 없습니다.</div>`; 
-                } else {
+                if(filtered.length === 0) { html += `<div class="text-gray-400 text-center py-10 w-full col-span-full">해당 이벤트가 없습니다.</div>`; } 
+                else {
                     filtered.forEach(e => {
                         let cmtHtml = '';
                         db.comments.filter(c => c.event_id === e.id).forEach(c => {
-                            // 댓글 보기 모드와 수정 모드를 동시에 그리고 숨김/표시로 제어
                             cmtHtml += `
                                 <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded mb-1 border" id="cmt_view_${c.id}">
                                     <div class="flex justify-between items-center mb-1">
@@ -315,16 +295,11 @@
                 }
                 main.innerHTML = html + `</div>`;
             } 
-            
-            // -----------------------------------------------------------------
-            // (5) 자료실 / 보고서 / 앨범 탭 (빈 화면)
-            // -----------------------------------------------------------------
             else {
                 main.innerHTML = `<div class="text-center py-20 text-gray-400 w-full col-span-full">아직 개발 대기 중인 메뉴입니다. (클라우드 연동 필요)</div>`;
             }
         }
 
-        // [소단원 5-3] 업무목록 카드 렌더링 헬퍼 함수
         function renderTaskCard(t) {
             const isClosed = t.status === '종료';
             return `
@@ -343,7 +318,8 @@
                         
                         <div class="flex gap-2 bg-white p-2 rounded-lg border">
                             <button onclick="updateItem('tasks', ${t.id}, {is_starred: ${!t.is_starred}})" class="flex-1 py-1 border rounded text-xs hover:bg-gray-100">${t.is_starred ? '⭐ 해제' : '☆ 중요'}</button>
-                            <button onclick="openModal('tasks', ${t.id})" class="flex-1 py-1 border rounded text-xs text-blue-600 hover:bg-blue-50">✏️ 수정</button>
+                            <!-- 목록 카드에서는 수정버튼 클릭 시 바로 수정모드로 열림 -->
+                            <button onclick="openModal('tasks', ${t.id}, false)" class="flex-1 py-1 border rounded text-xs text-blue-600 hover:bg-blue-50">✏️ 수정</button>
                             ${!isClosed 
                                 ? `<button onclick="updateItem('tasks', ${t.id}, {status: '종료'})" class="flex-1 py-1 border rounded text-xs text-green-600 font-bold hover:bg-green-50">✔️ 종료</button>` 
                                 : `<button onclick="updateItem('tasks', ${t.id}, {status: '활성'})" class="flex-1 py-1 border rounded text-xs text-blue-600 font-bold hover:bg-blue-50">🔄 복구</button>`
@@ -358,43 +334,51 @@
         // ==============================================================================
         // [대단원 6] 자바스크립트: 모달 폼 동적 제어 및 데이터 제출                      
         // ==============================================================================
-
-        // [소단원 6-1] 업무카드 등록 시 '기간' 선택 여부에 따른 날짜 입력창 UI 변경
+        
+        // [수정 3] 날짜 입력칸 숨김/표시 방식을 확실한 style.display 방식으로 변경
         function toggleDateInput() {
             const val = document.getElementById('m_dtype').value;
-            if(val === '기간') {
-                document.getElementById('date_single').classList.add('hidden');
-                document.getElementById('date_range').classList.remove('hidden');
-            } else {
-                document.getElementById('date_single').classList.remove('hidden');
-                document.getElementById('date_range').classList.add('hidden');
+            const single = document.getElementById('date_single');
+            const range = document.getElementById('date_range');
+            
+            if(single && range) {
+                if(val === '기간') {
+                    single.style.display = 'none';
+                    range.style.display = 'flex';
+                } else {
+                    single.style.display = 'block';
+                    range.style.display = 'none';
+                }
             }
         }
 
-        // [소단원 6-2] 모달창 열기 (등록 및 수정 기능 통합)
-        function openModal(forceTable = null, editId = null) {
+        // [수정 2] 모달창 열기 (등록/수정/조회 통합) - isView 파라미터 추가
+        function openModal(forceTable = null, editId = null, isView = false) {
             editMode = editId ? { table: forceTable, id: editId } : null;
             const table = forceTable || (currentTab === 0 ? 'notices' : (currentTab === 3 || currentTab === 4) ? 'events' : 'tasks');
             const body = document.getElementById('modalBody');
             
-            // 수정 시 해당 데이터를 찾아 변수에 담기
             let item = editId ? db[table].find(x => x.id === editId) : {};
+            
+            // 제목 분기
+            if (isView) document.getElementById('modalTitle').innerText = "일정 상세보기";
+            else document.getElementById('modalTitle').innerText = editId ? "내용 수정하기" : "새로 등록하기";
 
-            document.getElementById('modalTitle').innerText = editId ? "내용 수정하기" : "새로 등록하기";
+            // 비활성화(disabled) 텍스트 속성 추가
+            const dis = isView ? "disabled" : "";
 
-            // 테이블(종류)별로 입력 폼 동적 생성
+            // [수정 4] 텍스트 박스 높이를 h-[300px] 로 대폭 확장
             if (table === 'notices') {
-                body.innerHTML = `<textarea id="m_content" class="w-full border p-3 rounded-lg h-32 outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" placeholder="중요알림 내용">${item.content || ''}</textarea>`;
+                body.innerHTML = `<textarea id="m_content" ${dis} class="w-full border p-3 rounded-lg h-[300px] outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" placeholder="중요알림 내용">${item.content || ''}</textarea>`;
             } 
             else if (table === 'events') {
                 body.innerHTML = `
-                    <input type="date" id="m_date" value="${item.event_date || ''}" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 mb-2">
-                    <input type="text" id="m_title" value="${item.title || ''}" placeholder="이벤트 제목" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 mb-2">
-                    <textarea id="m_content" class="w-full border p-3 rounded-lg h-40 outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" placeholder="초기 증상 및 현상을 자세히 적어주세요">${item.content || ''}</textarea>
+                    <input type="date" id="m_date" ${dis} value="${item.event_date || ''}" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 mb-2">
+                    <input type="text" id="m_title" ${dis} value="${item.title || ''}" placeholder="이벤트 제목" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 mb-2">
+                    <textarea id="m_content" ${dis} class="w-full border p-3 rounded-lg h-[300px] outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" placeholder="초기 증상 및 현상을 자세히 적어주세요">${item.content || ''}</textarea>
                 `;
             } 
             else if (table === 'tasks') {
-                // 시작일과 종료일 스플릿 처리 ('기간' 일 경우 대비)
                 const sDate = item.start_date || '';
                 const isRange = sDate.includes('~');
                 const d1 = isRange ? sDate.split(' ~ ')[0] : sDate;
@@ -402,29 +386,53 @@
                 
                 body.innerHTML = `
                     <div class="flex gap-2 mb-2">
-                        <input type="text" id="m_title" value="${item.title || ''}" placeholder="업무 제목" class="w-2/3 border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
-                        <select id="m_cat" class="w-1/3 border p-3 rounded-lg outline-none"><option>일반</option><option>점검</option><option>자체</option><option>외주</option><option>제출</option><option>보고</option></select>
+                        <input type="text" id="m_title" ${dis} value="${item.title || ''}" placeholder="업무 제목" class="w-2/3 border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                        <select id="m_cat" ${dis} class="w-1/3 border p-3 rounded-lg outline-none"><option value="일반">일반</option><option value="점검">점검</option><option value="자체">자체</option><option value="외주">외주</option><option value="제출">제출</option><option value="보고">보고</option></select>
                     </div>
                     <div class="flex gap-2 mb-2">
-                        <select id="m_dtype" onchange="toggleDateInput()" class="w-1/3 border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
-                            <option>특정날짜</option><option>기간</option><option>기한</option>
+                        <select id="m_dtype" ${dis} onchange="toggleDateInput()" class="w-1/3 border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="특정날짜">특정날짜</option><option value="기간">기간</option><option value="기한">기한</option>
                         </select>
-                        <div id="date_single" class="w-2/3">
-                            <input type="date" id="m_date1" value="${d1}" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                        <div id="date_single" class="w-2/3" style="display: ${isRange ? 'none' : 'block'}">
+                            <input type="date" id="m_date1" ${dis} value="${d1}" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
                         </div>
-                        <div id="date_range" class="w-2/3 hidden flex items-center gap-1">
-                            <input type="date" id="m_date_start" value="${d1}" class="w-1/2 border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                        <div id="date_range" class="w-2/3 items-center gap-1" style="display: ${isRange ? 'flex' : 'none'}">
+                            <input type="date" id="m_date_start" ${dis} value="${d1}" class="w-1/2 border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
                             <span class="text-gray-400">~</span>
-                            <input type="date" id="m_date_end" value="${d2}" class="w-1/2 border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                            <input type="date" id="m_date_end" ${dis} value="${d2}" class="w-1/2 border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
                         </div>
                     </div>
-                    <textarea id="m_content" class="w-full border p-3 rounded-lg h-32 outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" placeholder="상세 업무 내용">${item.content || ''}</textarea>
+                    <textarea id="m_content" ${dis} class="w-full border p-3 rounded-lg h-[300px] outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" placeholder="상세 업무 내용">${item.content || ''}</textarea>
                 `;
                 
                 if(item.category) document.getElementById('m_cat').value = item.category;
-                if(item.date_type) { document.getElementById('m_dtype').value = item.date_type; toggleDateInput(); }
+                if(item.date_type) { document.getElementById('m_dtype').value = item.date_type; }
+                
+                // 등록 창이 뜰 때 초기 날짜 형태 잡아주기
+                if(!isView) toggleDateInput(); 
             }
+
+            // [수정 2] 모달 하단 버튼을 보기 모드 여부에 따라 변경
+            let buttonsHtml = '';
+            if (isView) {
+                buttonsHtml = `
+                    <button id="btnEditMode" onclick="enableEditMode()" class="w-full bg-gray-500 text-white font-bold py-3 rounded-lg mt-4 shadow-md hover:bg-gray-600 transition">✏️ 수정하기</button>
+                    <button id="btnSave" onclick="submitData()" class="hidden w-full bg-blue-600 text-white font-bold py-3 rounded-lg mt-4 shadow-md hover:bg-blue-700 transition">저장하기</button>
+                `;
+            } else {
+                buttonsHtml = `<button id="btnSave" onclick="submitData()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg mt-4 shadow-md hover:bg-blue-700 transition">저장하기</button>`;
+            }
+            document.getElementById('modalButtons').innerHTML = buttonsHtml;
+
             document.getElementById('actionModal').classList.remove('hidden');
+        }
+
+        // [수정 2] 캘린더에서 보기 모드로 열었을 때, 박스 잠금을 풀고 저장버튼을 띄우는 함수
+        function enableEditMode() {
+            document.querySelectorAll('#modalBody input, #modalBody textarea, #modalBody select').forEach(el => el.disabled = false);
+            document.getElementById('modalTitle').innerText = "내용 수정하기";
+            document.getElementById('btnEditMode').classList.add('hidden');
+            document.getElementById('btnSave').classList.remove('hidden');
         }
 
         function closeModal() { 
@@ -432,7 +440,6 @@
             editMode = null; 
         }
 
-        // [소단원 6-3] 폼 데이터 수집 및 백엔드 전송
         async function submitData() {
             const table = editMode ? editMode.table : (document.getElementById('m_cat') ? 'tasks' : document.getElementById('m_date') ? 'events' : 'notices');
             let payload = editMode ? {} : { user_email: DEFAULT_EMAIL };
@@ -449,7 +456,6 @@
                 payload.date_type = document.getElementById('m_dtype').value;
                 payload.content = document.getElementById('m_content').value;
                 
-                // 기간일 경우 날짜 2개를 합쳐서 저장
                 if(payload.date_type === '기간') {
                     payload.start_date = document.getElementById('m_date_start').value + " ~ " + document.getElementById('m_date_end').value;
                 } else {
@@ -464,7 +470,7 @@
                     await fetch(`/api/${table}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
                 }
                 closeModal(); 
-                initApp(); // 등록/수정 완료 후 새로고침
+                initApp(); 
             } catch(e) { alert("저장 실패했습니다."); }
         }
 
@@ -503,7 +509,6 @@
             } 
         }
 
-        // 앱 시작
         window.onload = initApp;
     </script>
 </body>
