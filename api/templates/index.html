@@ -39,7 +39,7 @@
     <!-- ============================================================================== -->
     <!-- [대단원 2] 메인 레이아웃 및 네비게이션 영역                                     -->
     <!-- ============================================================================== -->
-    <div class="max-w-5xl mx-auto bg-white min-h-screen shadow-lg relative pb-20">
+    <div class="w-full mx-auto bg-white min-h-screen shadow-lg relative pb-20">
         <header class="bg-blue-900 text-white p-4 flex items-center justify-center shadow-md sticky top-0 z-20">
             <img src="/icon.png" class="w-8 h-8 mr-3 rounded-md object-cover bg-white">
             <h1 class="text-xl font-bold tracking-wider">Line7-Mech-C</h1>
@@ -60,7 +60,7 @@
             <div class="text-center py-20 text-gray-400 font-bold">데이터 로딩 중... 🚀</div>
         </main>
 
-        <button id="globalAddBtn" onclick="openModal()" class="fixed bottom-6 right-6 lg:right-[calc(50%-23rem)] bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl text-3xl flex items-center justify-center hover:bg-blue-700 z-30 transition transform hover:scale-105">
+        <button id="globalAddBtn" onclick="openModal()" class="fixed bottom-6 right-6 bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl text-3xl flex items-center justify-center hover:bg-blue-700 z-30 transition transform hover:scale-105">
             +
         </button>
 
@@ -178,12 +178,12 @@
                 const today = new Date();
                 
                 let calHtml = `
-                    <div class="flex justify-between items-center mb-4 bg-white p-2 rounded-lg shadow-sm border col-span-full w-full max-w-3xl mx-auto">
+                    <div class="flex justify-between items-center mb-4 bg-white p-2 rounded-lg shadow-sm border col-span-full w-full mx-auto">
                         <button onclick="calMonth--; if(calMonth<1){calMonth=12; calYear--;} renderTab();" class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">◀</button>
                         <h3 class="font-black text-lg">${calYear}년 ${calMonth}월</h3>
                         <button onclick="calMonth++; if(calMonth>12){calMonth=1; calYear++;} renderTab();" class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">▶</button>
                     </div>
-                    <div class="cal-grid rounded-xl overflow-hidden shadow-sm col-span-full w-full max-w-3xl mx-auto">
+                    <div class="cal-grid rounded-xl overflow-hidden shadow-sm col-span-full w-full mx-auto">
                         <div class="cal-header text-red-500">일</div><div class="cal-header">월</div><div class="cal-header">화</div><div class="cal-header">수</div><div class="cal-header">목</div><div class="cal-header">금</div><div class="cal-header text-blue-500">토</div>
                 `;
                 
