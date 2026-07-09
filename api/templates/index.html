@@ -204,7 +204,13 @@
                             </div>
                     `;
                     
-                    db.tasks.filter(t => t.start_date && t.start_date.includes(dateStr)).forEach(t => {
+                    db.tasks.filter(t => {
+                        if (!t.start_date) return false;
+                        if (t.date_type === '기간' && t.end_date) {
+                            return dateStr >= t.start_date && dateStr <= t.end_date;
+                        }
+                        return t.start_date === dateStr;
+                    }).forEach(t => {
                         const style = t.status === '종료' ? 'bg-gray-100 text-gray-400 line-through border-l-2 border-gray-300' : (t.is_starred ? 'bg-yellow-100 text-yellow-800 border-l-2 border-yellow-500 font-bold' : 'bg-blue-50 text-blue-800 border-l-2 border-blue-500');
                         // [수정 2] 캘린더 일정 클릭 시 보기 모드(isView = true)로 열리도록 연동
                         dayHtml += `<div onclick="openModal('tasks', ${t.id}, true)" class="text-[0.65rem] p-1 mb-1 rounded truncate shadow-sm cursor-pointer hover:opacity-80 ${style}">${t.title}</div>`;
@@ -302,11 +308,15 @@
 
         function renderTaskCard(t) {
             const isClosed = t.status === '종료';
+            let displayDate = t.start_date || '';
+            if (t.date_type === '기간' && t.end_date) {
+                displayDate = `${t.start_date} ~ ${t.end_date}`;
+            }
             return `
                 <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-3 overflow-hidden">
                     <div class="p-4 cursor-pointer hover:bg-gray-50 flex flex-col transition" onclick="toggleAccordion('task_detail_${t.id}')">
                         <div class="flex justify-between items-start mb-1">
-                            <span class="bg-blue-100 text-blue-800 text-[0.7rem] px-2 py-0.5 rounded-md font-bold">[${t.category || '일반'}] ${t.date_type}: ${t.start_date || ''}</span>
+                            <span class="bg-blue-100 text-blue-800 text-[0.7rem] px-2 py-0.5 rounded-md font-bold">[${t.category || '일반'}] ${t.date_type}: ${displayDate}</span>
                             <span class="text-gray-400 text-xs">▼</span>
                         </div>
                         <h3 class="font-bold text-base ${isClosed ? 'text-gray-400 line-through' : 'text-gray-800'}">${t.title}</h3>
@@ -318,7 +328,6 @@
                         
                         <div class="flex gap-2 bg-white p-2 rounded-lg border">
                             <button onclick="updateItem('tasks', ${t.id}, {is_starred: ${!t.is_starred}})" class="flex-1 py-1 border rounded text-xs hover:bg-gray-100">${t.is_starred ? '⭐ 해제' : '☆ 중요'}</button>
-                            <!-- 목록 카드에서는 수정버튼 클릭 시 바로 수정모드로 열림 -->
                             <button onclick="openModal('tasks', ${t.id}, false)" class="flex-1 py-1 border rounded text-xs text-blue-600 hover:bg-blue-50">✏️ 수정</button>
                             ${!isClosed 
                                 ? `<button onclick="updateItem('tasks', ${t.id}, {status: '종료'})" class="flex-1 py-1 border rounded text-xs text-green-600 font-bold hover:bg-green-50">✔️ 종료</button>` 
@@ -379,10 +388,9 @@
                 `;
             } 
             else if (table === 'tasks') {
-                const sDate = item.start_date || '';
-                const isRange = sDate.includes('~');
-                const d1 = isRange ? sDate.split(' ~ ')[0] : sDate;
-                const d2 = isRange ? sDate.split(' ~ ')[1] : '';
+                const isRange = item.date_type === '기간';
+                const d1 = item.start_date || '';
+                const d2 = item.end_date || '';
                 
                 body.innerHTML = `
                     <div class="flex gap-2 mb-2">
@@ -457,9 +465,11 @@
                 payload.content = document.getElementById('m_content').value;
                 
                 if(payload.date_type === '기간') {
-                    payload.start_date = document.getElementById('m_date_start').value + " ~ " + document.getElementById('m_date_end').value;
+                    payload.start_date = document.getElementById('m_date_start').value;
+                    payload.end_date = document.getElementById('m_date_end').value;
                 } else {
                     payload.start_date = document.getElementById('m_date1').value;
+                    payload.end_date = null;
                 }
             }
 
@@ -473,7 +483,7 @@
                 initApp(); 
             } catch(e) { alert("저장 실패했습니다."); }
         }
-
+        
         // ==============================================================================
         // [대단원 7] 자바스크립트: 댓글 및 삭제/수정 공통 액션 로직                   
         // ==============================================================================
