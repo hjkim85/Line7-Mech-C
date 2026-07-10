@@ -12,6 +12,9 @@
     <link rel="icon" type="image/png" href="/icon.png">
     <meta name="theme-color" content="#1E3A8A">
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
     <style>
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
@@ -46,9 +49,23 @@
     <!-- [대단원 2] 메인 레이아웃 및 네비게이션 영역                                     -->
     <!-- ============================================================================== -->
     <div class="w-full mx-auto bg-white min-h-screen shadow-lg relative pb-20">
-        <header class="bg-blue-900 text-white p-4 flex items-center justify-center shadow-md sticky top-0 z-20">
-            <img src="/icon.png" class="w-8 h-8 mr-3 rounded-md object-cover bg-white">
-            <h1 class="text-xl font-bold tracking-wider">Line7-Mech-C</h1>
+        <header class="bg-blue-900 text-white p-3 sm:p-4 flex items-center justify-between shadow-md sticky top-0 z-20">
+            <div class="flex items-center">
+                <img src="/icon.png" class="w-8 h-8 mr-2 sm:mr-3 rounded-md object-cover bg-white">
+                <h1 class="text-lg sm:text-xl font-bold tracking-wider">Line7-Mech-C</h1>
+            </div>
+            
+            <div id="auth-section" class="flex items-center">
+                <div id="google-login-btn"></div>
+                
+                <div id="user-profile" class="hidden flex items-center gap-2 sm:gap-3">
+                    <div class="text-right">
+                        <div id="user-name-display" class="text-xs sm:text-sm font-bold leading-tight"></div>
+                        <div id="user-email-display" class="text-[0.65rem] text-blue-300 hidden sm:block"></div>
+                    </div>
+                    <button onclick="handleSignOut()" class="bg-blue-800 hover:bg-red-600 transition px-2 sm:px-3 py-1 rounded text-xs border border-blue-700 shadow-sm">로그아웃</button>
+                </div>
+            </div>
         </header>
 
         <nav class="flex overflow-x-auto hide-scroll bg-white border-b sticky top-[64px] z-10" id="tabs">
@@ -92,12 +109,64 @@
     <!-- [대단원 4] 자바스크립트: 데이터베이스 통신 및 상태 관리 로직                   -->
     <!-- ============================================================================== -->
     <script>
+        // 🚨 (채팅창 렌더링 오류 대비용 주석) 이곳이 [대단원 4]의 시작 부분입니다!
+
         let db = { notices: [], tasks: [], events: [], comments: [] };
         let currentTab = 0;
         let calYear = new Date().getFullYear();
         let calMonth = new Date().getMonth() + 1;
-        const DEFAULT_EMAIL = "c_team@incheon.go.kr"; // 구글 로그인 연동 시 이 변수가 실제 사용자로 교체됨
+        
+        // [수정] 기존 고정 이메일(DEFAULT_EMAIL)을 삭제하고 실제 로그인 정보를 담을 변수로 교체합니다.
+        let userEmail = null;
+        let userName = null;
         let editMode = null; 
+
+        // [신규 추가] 구글 로그인 성공 시 백엔드로 토큰을 보내 검증하고 세션을 생성하는 함수
+        async function handleCredentialResponse(response) {
+            try {
+                const res = await fetch('/api/auth/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: response.credential })
+                });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    userEmail = data.user.email;
+                    userName = data.user.name;
+                    
+                    // 상단 헤더 UI 업데이트 (로그인 버튼 숨김, 프로필 표시)
+                    document.getElementById('google-login-btn').style.display = 'none';
+                    const profile = document.getElementById('user-profile');
+                    profile.classList.remove('hidden');
+                    profile.classList.add('flex');
+                    document.getElementById('user-name-display').innerText = userName;
+                    document.getElementById('user-email-display').innerText = userEmail;
+                    
+                    // ✅ 로그인이 성공했을 때 비로소 전체 데이터를 불러옵니다.
+                    initApp(); 
+                } else {
+                    alert("구글 인증에 실패했습니다.");
+                }
+            } catch (error) {
+                console.error("로그인 검증 에러:", error);
+            }
+        }
+
+        // [신규 추가] 로그아웃 처리 함수
+        function handleSignOut() {
+            userEmail = null;
+            userName = null;
+            
+            // 상단 헤더 UI 원복
+            document.getElementById('user-profile').classList.add('hidden');
+            document.getElementById('user-profile').classList.remove('flex');
+            document.getElementById('google-login-btn').style.display = 'block';
+            
+            // 로그아웃 시 화면 데이터를 비우고 렌더링 초기화
+            db = { notices: [], tasks: [], events: [], comments: [] };
+            renderTab();
+        }
 
         function formatDate(dateString) {
             if(!dateString) return '';
@@ -128,6 +197,22 @@
             const cycle = ['A/D', 'A/C', 'B/A', 'B/D', 'C/B', 'C/A', 'D/C', 'D/B'];
             return cycle[((diffDays + 3) % 8 + 8) % 8];
         }
+
+        // [신규 추가] 화면이 켜지면 구글 로그인 버튼을 렌더링합니다.
+        window.onload = function() {
+            google.accounts.id.initialize({
+                // ⚠️ 주의: 아래 쌍따옴표 안쪽 문자열에 1단계에서 발급받으신 클라이언트 ID를 꼭 붙여넣어 주세요!
+                client_id: "809024272690-0ebueeohb9sv0sdoe69v69fd0ooaap3p.apps.googleusercontent.com",
+                callback: handleCredentialResponse
+            });
+            google.accounts.id.renderButton(
+                document.getElementById("google-login-btn"),
+                { theme: "outline", size: "medium", type: "standard" }
+            );
+            
+            // 기존에는 페이지가 로드되자마자 initApp()을 실행했지만,
+            // 이제는 로그인 성공 전까지 빈 화면(데이터 없음)을 유지하기 위해 삭제했습니다.
+        };
 
         // ==============================================================================
         // [대단원 5] 자바스크립트: 화면 UI 렌더링 및 클릭 이벤트 제어                   
@@ -307,6 +392,31 @@
                 }
                 main.innerHTML = html + `</div>`;
             } 
+            // [신규 추가] 탭 5(자료실) 및 탭 7(앨범) 구글 드라이브 연동 로직
+            else if (currentTab === 5 || currentTab === 7) {
+                const isAlbum = currentTab === 7;
+                const title = isAlbum ? "🖼️ 현장 사진 앨범" : "📁 도면 및 매뉴얼 자료실";
+                
+                // ⚠️ 주의: 구글 드라이브에서 직접 폴더를 열고 주소창의 폴더 고유 ID 문자열을 복사하여 아래에 각각 넣어주세요!
+                const folderId = isAlbum ? "1ZUNDkpumQxfWcXe2UTzJsLYPyWe9_RUx" : "1HqUUBuMcsDH_tnZik5mDyvkJpll8MKtm";
+
+                html += `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">${title}</h2>`;
+
+                if (typeof userEmail === 'undefined' || !userEmail) {
+                    html += `<div class="text-center py-20 text-gray-400 w-full col-span-full">구글 로그인이 필요한 메뉴입니다. 상단에서 로그인해주세요.</div>`;
+                } else if (!window.driveToken) {
+                    html += `
+                        <div class="text-center py-10 col-span-full bg-white border rounded-xl shadow-sm">
+                            <p class="mb-4 text-sm text-gray-600">안전한 데이터 열람을 위해 구글 드라이브 접근 권한이 필요합니다.</p>
+                            <button onclick="requestDriveAccess()" class="bg-blue-600 text-white px-5 py-2 rounded-lg font-bold hover:bg-blue-700 transition">구글 드라이브 연결하기</button>
+                        </div>
+                    `;
+                } else {
+                    html += `<div id="drive-contents-${currentTab}" class="col-span-full text-center py-10 text-gray-500 font-bold">데이터를 불러오는 중입니다... 🚀</div>`;
+                    fetchDriveFiles(folderId, currentTab); 
+                }
+                main.innerHTML = html + `</div>`;
+            }
             else {
                 main.innerHTML = `<div class="text-center py-20 text-gray-400 w-full col-span-full">아직 개발 대기 중인 메뉴입니다. (클라우드 연동 필요)</div>`;
             }
@@ -346,9 +456,66 @@
             `;
         }
 
-        // ==============================================================================
-        // [대단원 6] 자바스크립트: 모달 폼 동적 제어 및 데이터 제출                      
-        // ==============================================================================
+        // [신규 추가] 구글 드라이브 권한 요청 함수 (OAuth 2.0 Token Client)
+        function requestDriveAccess() {
+            const client = google.accounts.oauth2.initTokenClient({
+                // ⚠️ 주의: 대단원 4에 넣었던 것과 동일하게 구글 클라우드 콘솔의 클라이언트 ID를 아래에 넣어주세요!
+                client_id: "809024272690-0ebueeohb9sv0sdoe69v69fd0ooaap3p.apps.googleusercontent.com",
+                scope: 'https://www.googleapis.com/auth/drive.readonly',
+                callback: (response) => {
+                    if (response && response.access_token) {
+                        window.driveToken = response.access_token;
+                        renderTab(); // 권한 획득 후 화면을 다시 그리면 자동으로 폴더 내용 로딩이 시작됩니다.
+                    }
+                }
+            });
+            client.requestAccessToken();
+        }
+
+        // [신규 추가] 구글 드라이브 파일 목록 가져오기 및 UI 렌더링 함수
+        async function fetchDriveFiles(folderId, tabIndex) {
+            try {
+                const res = await fetch('/api/drive/files', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ access_token: window.driveToken, folder_id: folderId })
+                });
+                const data = await res.json();
+                const container = document.getElementById(`drive-contents-${tabIndex}`);
+                
+                if (data.status === 'success') {
+                    if (data.data.length === 0) {
+                        container.innerHTML = `<div class="text-gray-400">해당 폴더에 파일이 없습니다.</div>`;
+                        return;
+                    }
+                    
+                    let fileHtml = `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 w-full">`;
+                    data.data.forEach(f => {
+                        const isImg = f.mimeType.includes('image');
+                        const icon = isImg ? '🖼️' : '📄';
+                        const thumb = f.thumbnailLink ? `<img src="${f.thumbnailLink}" class="w-full h-28 object-cover rounded mb-2 border">` : `<div class="w-full h-28 bg-gray-100 flex items-center justify-center rounded mb-2 text-4xl border">${icon}</div>`;
+                        
+                        fileHtml += `
+                            <a href="${f.webViewLink}" target="_blank" class="border p-3 rounded-lg shadow-sm hover:shadow-md transition flex flex-col items-center bg-white cursor-pointer text-center hover:bg-gray-50">
+                                ${thumb}
+                                <span class="text-xs font-bold text-gray-700 truncate w-full" title="${f.name}">${f.name}</span>
+                            </a>
+                        `;
+                    });
+                    fileHtml += `</div>`;
+                    container.innerHTML = fileHtml;
+                    container.classList.remove('text-center', 'py-10');
+                } else {
+                    container.innerHTML = `<div class="text-red-500 font-bold">파일 로딩 실패: ${data.message}</div>`;
+                }
+            } catch (e) {
+                document.getElementById(`drive-contents-${tabIndex}`).innerHTML = `<div class="text-red-500 font-bold">네트워크 오류가 발생했습니다.</div>`;
+            }
+        }
+
+// 🚨 ==============================================================================
+        // 🚨 [대단원 6] 자바스크립트: 모달 폼 동적 제어 및 데이터 제출                      
+        // 🚨 ==============================================================================
         
         // [수정 3] 날짜 입력칸 숨김/표시 방식을 확실한 style.display 방식으로 변경
         function toggleDateInput() {
@@ -455,8 +622,16 @@
         }
 
         async function submitData() {
+            // [신규 추가] 로그인 확인 방어 로직
+            if (!editMode && (!userEmail || userEmail === "")) {
+                alert("구글 로그인이 필요합니다.");
+                return;
+            }
+
             const table = editMode ? editMode.table : (document.getElementById('m_cat') ? 'tasks' : document.getElementById('m_date') ? 'events' : 'notices');
-            let payload = editMode ? {} : { user_email: DEFAULT_EMAIL };
+            
+            // [수정] DEFAULT_EMAIL(하드코딩) 대신, 로그인 세션에 저장된 실제 userEmail 변수를 사용하도록 변경
+            let payload = editMode ? {} : { user_email: userEmail };
 
             if(table === 'notices') {
                 payload.content = document.getElementById('m_content').value;
@@ -490,9 +665,9 @@
             } catch(e) { alert("저장 실패했습니다."); }
         }
         
-        // ==============================================================================
-        // [대단원 7] 자바스크립트: 댓글 및 삭제/수정 공통 액션 로직                   
-        // ==============================================================================
+        // 🚨 ==============================================================================
+        // 🚨 [대단원 7] 자바스크립트: 댓글 및 삭제/수정 공통 액션 로직                   
+        // 🚨 ==============================================================================
         
         function toggleCommentEdit(id) {
             document.getElementById(`cmt_view_${id}`).classList.toggle('hidden');
@@ -506,9 +681,16 @@
         }
         
         async function addComment(eventId) {
+            // [신규 추가] 로그인 확인 방어 로직
+            if (!userEmail || userEmail === "") {
+                alert("구글 로그인이 필요합니다.");
+                return;
+            }
+
             const val = document.getElementById(`cmt_new_${eventId}`).value;
             if(val) { 
-                await fetch('/api/event_comments', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({event_id: eventId, content: val, user_email: DEFAULT_EMAIL}) }); 
+                // [수정] DEFAULT_EMAIL을 실제 로그인 세션 변수인 userEmail로 교체
+                await fetch('/api/event_comments', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({event_id: eventId, content: val, user_email: userEmail}) }); 
                 initApp(); 
             }
         }
@@ -524,7 +706,7 @@
                 initApp(); 
             } 
         }
-
+        
         window.onload = initApp;
     </script>
 </body>
