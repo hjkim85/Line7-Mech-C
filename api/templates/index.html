@@ -116,9 +116,9 @@
         let calYear = new Date().getFullYear();
         let calMonth = new Date().getMonth() + 1;
         
-        // [수정] 기존 고정 이메일(DEFAULT_EMAIL)을 삭제하고 실제 로그인 정보를 담을 변수로 교체합니다.
-        let userEmail = null;
-        let userName = null;
+        // [수정] 매번 초기화하지 않고, 브라우저에 저장된(로컬 스토리지) 정보를 먼저 불러옵니다.
+        let userEmail = localStorage.getItem('userEmail');
+        let userName = localStorage.getItem('userName');
         let editMode = null; 
 
         // [신규 추가] 구글 로그인 성공 시 백엔드로 토큰을 보내 검증하고 세션을 생성하는 함수
@@ -135,15 +135,11 @@
                     userEmail = data.user.email;
                     userName = data.user.name;
                     
-                    // 상단 헤더 UI 업데이트 (로그인 버튼 숨김, 프로필 표시)
-                    document.getElementById('google-login-btn').style.display = 'none';
-                    const profile = document.getElementById('user-profile');
-                    profile.classList.remove('hidden');
-                    profile.classList.add('flex');
-                    document.getElementById('user-name-display').innerText = userName;
-                    document.getElementById('user-email-display').innerText = userEmail;
+                    // [핵심] 자동 로그인을 위해 브라우저에 이메일과 이름 저장
+                    localStorage.setItem('userEmail', userEmail);
+                    localStorage.setItem('userName', userName);
                     
-                    // ✅ 로그인이 성공했을 때 비로소 전체 데이터를 불러옵니다.
+                    updateAuthUI();
                     initApp(); 
                 } else {
                     alert("구글 인증에 실패했습니다.");
@@ -158,6 +154,10 @@
             userEmail = null;
             userName = null;
             
+            // [핵심] 로그아웃 시 브라우저에 저장된 정보 삭제
+            localStorage.removeItem('userEmail');
+            localStorage.removeItem('userName');
+            
             // 상단 헤더 UI 원복
             document.getElementById('user-profile').classList.add('hidden');
             document.getElementById('user-profile').classList.remove('flex');
@@ -166,6 +166,16 @@
             // 로그아웃 시 화면 데이터를 비우고 렌더링 초기화
             db = { notices: [], tasks: [], events: [], comments: [] };
             renderTab();
+        }
+
+        // [신규 추가] 상단 헤더 UI 업데이트 로직 분리 (재사용 목적)
+        function updateAuthUI() {
+            document.getElementById('google-login-btn').style.display = 'none';
+            const profile = document.getElementById('user-profile');
+            profile.classList.remove('hidden');
+            profile.classList.add('flex');
+            document.getElementById('user-name-display').innerText = userName;
+            document.getElementById('user-email-display').innerText = userEmail;
         }
 
         function formatDate(dateString) {
@@ -198,20 +208,24 @@
             return cycle[((diffDays + 3) % 8 + 8) % 8];
         }
 
-        // [신규 추가] 화면이 켜지면 구글 로그인 버튼을 렌더링합니다.
+        // [수정] 화면이 켜질 때 로컬 스토리지를 검사하여 자동 로그인 처리
         window.onload = function() {
-            google.accounts.id.initialize({
-                // ⚠️ 주의: 아래 쌍따옴표 안쪽 문자열에 1단계에서 발급받으신 클라이언트 ID를 꼭 붙여넣어 주세요!
-                client_id: "809024272690-0ebueeohb9sv0sdoe69v69fd0ooaap3p.apps.googleusercontent.com",
-                callback: handleCredentialResponse
-            });
-            google.accounts.id.renderButton(
-                document.getElementById("google-login-btn"),
-                { theme: "outline", size: "medium", type: "standard" }
-            );
-            
-            // 기존에는 페이지가 로드되자마자 initApp()을 실행했지만,
-            // 이제는 로그인 성공 전까지 빈 화면(데이터 없음)을 유지하기 위해 삭제했습니다.
+            if (userEmail && userName) {
+                // 이미 기기에 로그인 정보가 있으면 버튼 렌더링을 생략하고 바로 UI 업데이트 및 데이터 호출
+                updateAuthUI();
+                initApp();
+            } else {
+                // 기기에 정보가 없을 때만 구글 로그인 버튼을 그림
+                google.accounts.id.initialize({
+                    // 남겨주신 클라이언트 ID를 그대로 적용했습니다.
+                    client_id: "809024272690-0ebueeohb9sv0sdoe69v69fd0ooaap3p.apps.googleusercontent.com",
+                    callback: handleCredentialResponse
+                });
+                google.accounts.id.renderButton(
+                    document.getElementById("google-login-btn"),
+                    { theme: "outline", size: "medium", type: "standard" }
+                );
+            }
         };
 
         // ==============================================================================
