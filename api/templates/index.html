@@ -42,6 +42,22 @@
             cursor: not-allowed;
             border-color: #e2e8f0;
         }
+
+        /* [신규 추가] 파일 업로드 시 로딩 스피너 애니메이션 */
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid #ffffff;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* [신규 추가] 사진 첨부 미리보기 썸네일 규격 */
+        .preview-img { width: 50px; height: 50px; object-fit: cover; border-radius: 0.375rem; border: 1px solid #e2e8f0; }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -117,15 +133,14 @@
         let calYear = new Date().getFullYear();
         let calMonth = new Date().getMonth() + 1;
         
-        // [수정] 구글 로그인이나 로컬 스토리지 확인 없이, 공용(가짜) 계정 하나로 고정합니다.
+        // [신규 추가] 앨범 탭의 폴더 탐색을 위한 상태 변수
+        let folderHistory = []; 
+        let currentFolderId = null;
+        
         const userEmail = "team@line7.com";
         const userName = "Line7팀";
         let editMode = null; 
 
-        // [수정] 불필요해진 구글 로그인 토큰 검증(handleCredentialResponse) 함수 완전 삭제
-        // [수정] 불필요해진 로그아웃(handleSignOut) 함수 완전 삭제
-
-        // [수정] 상단 헤더 UI 업데이트 로직 (공용 이름 고정 및 버튼 제어 삭제)
         function updateAuthUI() {
             const profile = document.getElementById('user-profile');
             if (profile) {
@@ -165,11 +180,51 @@
             return cycle[((diffDays + 3) % 8 + 8) % 8];
         }
 
-        // [수정] 화면이 켜질 때 구글 버튼 렌더링 과정을 없애고, 즉시 UI를 그리고 데이터를 불러옵니다.
         window.onload = function() {
             updateAuthUI();
             initApp();
         };
+
+        // [신규 추가] 이미지 해상도 및 용량 자동 압축 함수 (Canvas 활용)
+        async function compressImage(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        
+                        // 최대 가로/세로 길이를 1280px로 제한하여 용량을 1MB 이하로 대폭 감소
+                        const MAX_WIDTH = 1280;
+                        const MAX_HEIGHT = 1280;
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height) {
+                            if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                        } else {
+                            if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+                        }
+                        
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // JPEG 형식, 품질 0.7로 압축하여 File 객체로 다시 반환
+                        canvas.toBlob((blob) => {
+                            const compressedFile = new File([blob], file.name, {
+                                type: 'image/jpeg',
+                                lastModified: Date.now()
+                            });
+                            resolve(compressedFile);
+                        }, 'image/jpeg', 0.7);
+                    };
+                };
+            });
+        }
 
         // ==============================================================================
         // [대단원 5] 자바스크립트: 화면 UI 렌더링 및 클릭 이벤트 제어                   
@@ -178,6 +233,9 @@
             currentTab = index;
             document.querySelectorAll('.tab-btn').forEach((btn, i) => btn.className = `tab-btn ${i === index ? 'active' : ''}`);
             document.getElementById('globalAddBtn').style.display = (currentTab === 0 || currentTab > 4) ? 'none' : 'flex';
+            
+            // [신규 추가] 탭을 이동할 때 폴더 탐색 기록 초기화
+            if(index !== 7) { folderHistory = []; currentFolderId = null; }
             renderTab();
         }
 
@@ -327,8 +385,14 @@
                                     </div>
                                     <p class="text-sm text-gray-800 my-3 whitespace-pre-wrap leading-relaxed border-l-2 border-gray-300 pl-2"><strong>초기 증상:</strong>\n${e.content}</p>
                                     
-                                    <div class="my-3 p-3 bg-gray-100 border border-dashed border-gray-300 rounded text-center text-xs text-gray-500">
-                                        📷 사진 첨부 및 관리는 [앨범] 탭을 이용해주세요.
+                                    <!-- [수정] 이벤트 내부 사진 첨부 UI 로직 -->
+                                    <div class="my-3 p-3 bg-gray-100 border border-dashed border-gray-300 rounded text-center">
+                                        <input type="file" id="evt_files_${e.id}" multiple accept="image/*" class="hidden" onchange="uploadEventPhotos(${e.id}, '${e.title}')">
+                                        <button onclick="document.getElementById('evt_files_${e.id}').click()" class="bg-white border border-gray-300 text-gray-700 px-3 py-1 rounded text-xs font-bold hover:bg-gray-50 flex items-center justify-center mx-auto mb-1 shadow-sm">
+                                            📷 앨범에 사진 첨부 (최대 5장)
+                                        </button>
+                                        <p class="text-[0.65rem] text-gray-400">첨부 시 앨범에 '${e.title}' 폴더가 자동 생성됩니다.</p>
+                                        <div id="evt_upload_status_${e.id}" class="text-xs text-blue-600 font-bold mt-2 hidden"><div class="spinner border-blue-500 border-t-transparent w-3 h-3 border-2"></div> 업로드 중... 창을 닫지 마세요!</div>
                                     </div>
 
                                     <div class="my-4 space-y-2 bg-white p-2 rounded border">${cmtHtml}</div>
@@ -347,20 +411,39 @@
                 }
                 main.innerHTML = html + `</div>`;
             } 
-            // [수정] 탭 5(자료실) 및 탭 7(앨범) 서버 직결형 렌더링 로직
+            // [수정] 탭 5(자료실) 및 탭 7(앨범) 이원화 통신 및 내부 탐색 렌더링 로직
             else if (currentTab === 5 || currentTab === 7) {
                 const isAlbum = currentTab === 7;
                 const title = isAlbum ? "🖼️ 현장 사진 앨범" : "📁 도면 및 매뉴얼 자료실";
-                const folderType = isAlbum ? "album" : "docs"; // 백엔드로 넘길 폴더 종류 식별자
+                const folderType = isAlbum ? "album" : "docs"; 
 
-                html += `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">${title}</h2>`;
+                // [신규 추가] 뒤로 가기(탐색기) UI
+                let navHtml = '';
+                if (isAlbum && folderHistory.length > 0) {
+                    navHtml = `
+                        <div class="flex items-center gap-2 mb-3 bg-gray-50 p-2 rounded border col-span-full">
+                            <button onclick="goBackFolder()" class="px-3 py-1 bg-white border rounded text-xs font-bold hover:bg-gray-100 shadow-sm">◀ 상위 폴더로</button>
+                            <span class="text-xs text-gray-600 font-bold truncate">현재: 내부 폴더 탐색 중...</span>
+                        </div>
+                    `;
+                }
 
-                // [수정] 로그인 체크 등 번거로운 과정 전부 제거하고 바로 로딩 화면 표시
-                html += `<div id="drive-contents-${currentTab}" class="col-span-full text-center py-10 text-gray-500 font-bold">서버에서 드라이브 데이터를 동기화 중입니다... 🚀</div>`;
+                html += `
+                    <div class="col-span-full flex justify-between items-center mb-3 border-b pb-1">
+                        <h2 class="font-bold text-blue-900">${title}</h2>
+                        <button onclick="openModal('${folderType}')" class="bg-blue-100 text-blue-700 px-3 py-1 rounded text-xs font-bold hover:bg-blue-200 shadow-sm">+ ${isAlbum ? '사진 올리기' : '자료 올리기'}</button>
+                    </div>
+                `;
+                html += navHtml;
+                html += `<div id="drive-contents-${currentTab}" class="col-span-full text-center py-10 text-gray-500 font-bold"><div class="spinner border-gray-400 border-t-transparent w-5 h-5 border-2 mb-2"></div><br>데이터를 동기화 중입니다...</div>`;
                 main.innerHTML = html + `</div>`;
                 
-                // 화면에 로딩 문구를 띄운 직후, 백엔드 서버에 데이터 요청을 보냅니다.
-                fetchDriveFiles(folderType, currentTab); 
+                // 앨범 하위 폴더인 경우 폴더 ID를, 그 외에는 타입명 전달
+                if (isAlbum && currentFolderId) {
+                    fetchDriveFiles(folderType, currentTab, currentFolderId);
+                } else {
+                    fetchDriveFiles(folderType, currentTab); 
+                }
             }
             else {
                 main.innerHTML = `<div class="text-center py-20 text-gray-400 w-full col-span-full">아직 개발 대기 중인 메뉴입니다.</div>`;
@@ -370,9 +453,7 @@
         function renderTaskCard(t) {
             const isClosed = t.status === '종료';
             let displayDate = t.start_date || '';
-            if (t.date_type === '기간' && t.end_date) {
-                displayDate = `${t.start_date} ~ ${t.end_date}`;
-            }
+            if (t.date_type === '기간' && t.end_date) { displayDate = `${t.start_date} ~ ${t.end_date}`; }
             return `
                 <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-3 overflow-hidden">
                     <div class="p-4 cursor-pointer hover:bg-gray-50 flex flex-col transition" onclick="toggleAccordion('task_detail_${t.id}')">
@@ -401,34 +482,33 @@
             `;
         }
 
-        // [수정] 기존에 있던 프론트엔드 구글 권한 요청(requestDriveAccess) 함수 완전 삭제
-
-        // [수정] 백엔드(서버)로 폴더 종류(folder_type)만 넘겨서 데이터를 받아오는 함수로 개편
-        async function fetchDriveFiles(folderType, tabIndex) {
+        // [수정] 이원화된 폴더(자료실/앨범)에 맞추어 API를 분기하고 앱 내 폴더 탐색기를 구현합니다.
+        async function fetchDriveFiles(folderType, tabIndex, targetFolderId = null) {
             try {
-                const res = await fetch('/api/drive/files', {
+                // 자료실(docs)은 수파베이스 통신, 앨범(album)은 구글 드라이브 통신
+                const apiUrl = folderType === 'docs' ? '/api/storage/files' : '/api/drive/files';
+                const reqBody = folderType === 'docs' ? {} : (targetFolderId ? { folder_id: targetFolderId } : { folder_type: folderType });
+
+                const res = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // 폴더 고유 ID 대신 'docs' 또는 'album' 문자열만 서버로 전송
-                    body: JSON.stringify({ folder_type: folderType }) 
+                    body: JSON.stringify(reqBody) 
                 });
                 const data = await res.json();
                 const container = document.getElementById(`drive-contents-${tabIndex}`);
                 
                 if (data.status === 'success') {
                     if (data.data.length === 0) {
-                        container.innerHTML = `<div class="text-gray-400 text-center py-10 w-full col-span-full">해당 폴더에 파일이 없습니다.</div>`;
+                        container.innerHTML = `<div class="text-gray-400 text-center py-10 w-full col-span-full">현재 폴더가 비어 있습니다.</div>`;
                         return;
                     }
                     
                     let fileHtml = `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 w-full">`;
                     data.data.forEach(f => {
-                        // [핵심] 구글 드라이브 응답을 분석하여 폴더인지 이미지인지 구분
                         const isFolder = f.mimeType === 'application/vnd.google-apps.folder';
                         const isImg = f.mimeType.includes('image');
                         const icon = isFolder ? '📁' : (isImg ? '🖼️' : '📄');
                         
-                        // 썸네일 디자인 (폴더는 큰 아이콘으로, 이미지는 실제 썸네일 표시)
                         const thumb = isFolder 
                             ? `<div class="w-full h-28 bg-blue-50 flex items-center justify-center rounded mb-2 text-5xl border border-blue-200">${icon}</div>` 
                             : (f.thumbnailLink 
@@ -437,23 +517,47 @@
                         
                         const modDate = f.modifiedTime ? f.modifiedTime.substring(0, 10) : '';
 
-                        fileHtml += `
-                            <a href="${f.webViewLink}" target="_blank" class="border p-3 rounded-lg shadow-sm hover:shadow-md transition flex flex-col items-center bg-white cursor-pointer text-center hover:bg-gray-50">
-                                ${thumb}
-                                <span class="text-xs font-bold text-gray-800 truncate w-full mb-1" title="${f.name}">${f.name}</span>
-                                <span class="text-[0.65rem] text-gray-400">${modDate}</span>
-                            </a>
-                        `;
+                        // [핵심] 폴더면 클릭 시 내부 탐색(enterFolder) 실행, 파일이면 새 창(webViewLink) 열기
+                        if (isFolder) {
+                            fileHtml += `
+                                <div onclick="enterFolder('${f.id}')" class="border p-3 rounded-lg shadow-sm hover:shadow-md transition flex flex-col items-center bg-white cursor-pointer text-center hover:bg-gray-50">
+                                    ${thumb}
+                                    <span class="text-xs font-bold text-gray-800 truncate w-full mb-1" title="${f.name}">${f.name}</span>
+                                    <span class="text-[0.65rem] text-gray-400">${modDate}</span>
+                                </div>
+                            `;
+                        } else {
+                            fileHtml += `
+                                <a href="${f.webViewLink}" target="_blank" class="border p-3 rounded-lg shadow-sm hover:shadow-md transition flex flex-col items-center bg-white cursor-pointer text-center hover:bg-gray-50">
+                                    ${thumb}
+                                    <span class="text-xs font-bold text-gray-800 truncate w-full mb-1" title="${f.name}">${f.name}</span>
+                                    <span class="text-[0.65rem] text-gray-400">${modDate}</span>
+                                </a>
+                            `;
+                        }
                     });
                     fileHtml += `</div>`;
                     container.innerHTML = fileHtml;
                     container.classList.remove('text-center', 'py-10');
                 } else {
-                    container.innerHTML = `<div class="text-red-500 font-bold text-center py-10 w-full col-span-full">파일 로딩 실패: ${data.message}</div>`;
+                    container.innerHTML = `<div class="text-red-500 font-bold text-center py-10 w-full col-span-full">파일 로딩 실패</div>`;
                 }
             } catch (e) {
                 document.getElementById(`drive-contents-${tabIndex}`).innerHTML = `<div class="text-red-500 font-bold text-center py-10 w-full col-span-full">네트워크 오류가 발생했습니다.</div>`;
             }
+        }
+
+        // [신규 추가] 폴더 안으로 들어갈 때 ID를 기록하고 화면 갱신
+        function enterFolder(folderId) {
+            if (currentFolderId) folderHistory.push(currentFolderId);
+            currentFolderId = folderId;
+            renderTab();
+        }
+
+        // [신규 추가] 뒤로 가기 버튼을 눌렀을 때 이전 기록을 꺼내서 복귀
+        function goBackFolder() {
+            currentFolderId = folderHistory.pop() || null;
+            renderTab();
         }
 
         // 🚨 ==============================================================================
@@ -481,6 +585,23 @@
             const table = forceTable || (currentTab === 0 ? 'notices' : (currentTab === 3 || currentTab === 4) ? 'events' : 'tasks');
             const body = document.getElementById('modalBody');
             
+            // [신규 추가] 자료실이나 앨범 탭에서 파일을 올리는 경우 모달 UI를 완전히 다르게 구성합니다.
+            if (table === 'docs' || table === 'album') {
+                const isDoc = table === 'docs';
+                body.innerHTML = `
+                    <div class="mb-3 text-xs text-gray-500 bg-gray-50 p-2 rounded border">
+                        ${isDoc ? '📌 매뉴얼, 도면 등 문서 파일(PDF, HWP, CAD 등)을 업로드합니다.' : '📌 앨범에 추가할 사진을 최대 5장까지 선택해 주세요.'}
+                    </div>
+                    ${isDoc ? '' : '<input type="text" id="m_folder_name" placeholder="사진을 묶을 앨범 제목 (이벤트명과 동일하면 연결됨)" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 mb-2">'}
+                    <input type="file" id="m_files" ${isDoc ? '' : 'multiple accept="image/*"'} class="w-full border p-3 rounded-lg bg-gray-50">
+                    <div id="m_upload_status" class="text-xs text-blue-600 font-bold mt-2 hidden"><div class="spinner border-blue-500 border-t-transparent w-3 h-3 border-2"></div> 업로드 중... 창을 닫지 마세요!</div>
+                `;
+                document.getElementById('modalTitle').innerText = isDoc ? "자료실 파일 올리기" : "앨범 사진 올리기";
+                document.getElementById('modalButtons').innerHTML = `<button onclick="${isDoc ? 'uploadDocs()' : 'uploadAlbum()'}" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg mt-4 shadow-md hover:bg-blue-700 transition">업로드 시작</button>`;
+                document.getElementById('actionModal').classList.remove('hidden');
+                return; // 게시판 글쓰기 로직으로 넘어가지 않도록 여기서 끊어줍니다.
+            }
+
             let item = editId ? db[table].find(x => x.id === editId) : {};
             
             if (isView) document.getElementById('modalTitle').innerText = "일정 상세보기";
@@ -557,11 +678,7 @@
         }
 
         async function submitData() {
-            // [수정] 방어 로직 완전히 삭제 (누구나 바로 저장 가능)
-
             const table = editMode ? editMode.table : (document.getElementById('m_cat') ? 'tasks' : document.getElementById('m_date') ? 'events' : 'notices');
-            
-            // 공용 계정 변수인 userEmail을 사용하여 서버에 전송
             let payload = editMode ? {} : { user_email: userEmail };
 
             if(table === 'notices') {
@@ -594,6 +711,114 @@
                 closeModal(); 
                 initApp(); 
             } catch(e) { alert("저장 실패했습니다."); }
+        }
+
+        // [신규 추가] 수파베이스 자료실 스토리지 다이렉트 업로드 (파이썬 미거침)[cite: 1]
+        async function uploadDocs() {
+            const fileInput = document.getElementById('m_files');
+            if(fileInput.files.length === 0) return alert("자료를 선택해주세요.");
+            
+            const file = fileInput.files[0];
+            const statusDiv = document.getElementById('m_upload_status');
+            statusDiv.classList.remove('hidden');
+            
+            // 수파베이스 프로젝트 URL로 다이렉트 쏘기 (권한 설정이 PUBLIC 이라 가능함)[cite: 1]
+            const supabaseUrl = 'https://htobggomtiqklpqixllj.supabase.co';
+            const fileName = encodeURIComponent(file.name);
+            const uploadUrl = `${supabaseUrl}/storage/v1/object/docs/${fileName}`;
+            
+            try {
+                const res = await fetch(uploadUrl, {
+                    method: 'POST', 
+                    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                    body: file
+                });
+                if(res.ok) {
+                    alert("자료실 업로드 완료!");
+                    closeModal();
+                    renderTab();
+                } else {
+                    alert("업로드 실패: 덮어쓰기 권한이 없거나 동명의 파일이 존재합니다.");
+                    statusDiv.classList.add('hidden');
+                }
+            } catch(e) {
+                alert("업로드 중 오류가 발생했습니다.");
+                statusDiv.classList.add('hidden');
+            }
+        }
+
+        // [신규 추가] 앨범 탭에서 다중 이미지 압축하여 구글 드라이브로 서버 거쳐 업로드
+        async function uploadAlbum() {
+            const folderName = document.getElementById('m_folder_name').value;
+            const fileInput = document.getElementById('m_files');
+            if(!folderName) return alert("앨범 제목을 입력해주세요.");
+            if(fileInput.files.length === 0) return alert("사진을 선택해주세요.");
+            if(fileInput.files.length > 5) return alert("사진은 한 번에 최대 5장까지만 가능합니다.");
+
+            const statusDiv = document.getElementById('m_upload_status');
+            statusDiv.classList.remove('hidden');
+
+            const formData = new FormData();
+            formData.append('folder_name', folderName);
+            
+            // 이미지 자체 압축 엔진을 거쳐 FormData에 적재
+            for(let i=0; i<fileInput.files.length; i++) {
+                const compressed = await compressImage(fileInput.files[i]);
+                formData.append('files', compressed, compressed.name);
+            }
+
+            try {
+                const res = await fetch('/api/drive/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if(data.status === 'success') {
+                    alert("앨범 업로드 완료!");
+                    closeModal();
+                    renderTab();
+                } else {
+                    alert("업로드 실패: " + data.message);
+                    statusDiv.classList.add('hidden');
+                }
+            } catch(e) {
+                alert("네트워크 통신 중 오류가 발생했습니다.");
+                statusDiv.classList.add('hidden');
+            }
+        }
+
+        // [신규 추가] 이벤트 상세 화면에서 바로 사진 첨부하여 구글 드라이브로 쏘는 로직
+        async function uploadEventPhotos(eventId, eventTitle) {
+            const fileInput = document.getElementById(`evt_files_${eventId}`);
+            if(fileInput.files.length === 0) return;
+            if(fileInput.files.length > 5) {
+                alert("사진은 한 번에 최대 5장까지만 업로드 가능합니다.");
+                fileInput.value = '';
+                return;
+            }
+
+            const statusDiv = document.getElementById(`evt_upload_status_${eventId}`);
+            statusDiv.classList.remove('hidden');
+
+            const formData = new FormData();
+            formData.append('folder_name', eventTitle); 
+            
+            for(let i=0; i<fileInput.files.length; i++) {
+                const compressed = await compressImage(fileInput.files[i]);
+                formData.append('files', compressed, compressed.name);
+            }
+
+            try {
+                const res = await fetch('/api/drive/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if(data.status === 'success') {
+                    alert("이벤트 사진 첨부 완료! 앨범 탭에서 확인할 수 있습니다.");
+                } else {
+                    alert("업로드 실패: " + data.message);
+                }
+            } catch(e) {
+                alert("네트워크 오류가 발생했습니다.");
+            } finally {
+                statusDiv.classList.add('hidden');
+                fileInput.value = ''; // 다음 업로드를 위해 인풋 클리어
+            }
         }
         
         // 🚨 ==============================================================================
