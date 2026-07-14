@@ -1,16 +1,19 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect
 import urllib.request
 import json
 import os
 import io # [신규 추가: 앨범 다중 파일 업로드를 위한 모듈]
 
-# --- [수정: 구글 API 연동을 위한 필수 모듈 (서비스 계정 마스터 열쇠 방식)] ---
-from google.oauth2 import service_account
+# --- [수정: 구글 API 연동을 위한 필수 모듈 (OAuth 2.0 사용자 로그인 방식)] ---
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload # [신규 추가: 구글 드라이브 파일 전송 모듈]
+from googleapiclient.http import MediaIoBaseUpload 
 # ------------------------------------------------
 
 app = Flask(__name__)
+# [신규 추가] Vercel 서버리스 환경에서 로그인 세션 유지를 위한 고정 암호키 설정
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "line7-mech-c-super-secret-key") 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def get_headers():
@@ -40,19 +43,78 @@ def home():
     return render_template('index.html')
 
 # ==============================================================================
-# [수정] 구글 드라이브 서비스 계정(마스터 열쇠) 인증 및 연동 설정
+# [수정] 구글 드라이브 OAuth 2.0 사용자 인증 및 로그인 라우터 설정
 # ==============================================================================
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
-def get_drive_service():
-    """Vercel 환경변수에 저장된 JSON(마스터 열쇠)을 읽어와 드라이브 권한을 얻습니다."""
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS")
-    if not creds_json:
-        raise Exception("Vercel 환경변수에 GOOGLE_CREDENTIALS가 없습니다.")
+def get_flow():
+    """환경변수에 등록된 OAuth 정보를 바탕으로 인증 흐름(Flow) 객체를 생성합니다."""
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI")
     
-    # JSON 문자열을 파이썬 딕셔너리로 변환 후 권한 객체 생성
-    creds_dict = json.loads(creds_json)
-    creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    client_config = {
+        "web": {
+            "client_id": client_id,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_secret": client_secret,
+            "redirect_uris": [redirect_uri]
+        }
+    }
+    flow = Flow.from_client_config(client_config, scopes=SCOPES)
+    flow.redirect_uri = redirect_uri
+    return flow
+
+@app.route('/auth/login')
+def login():
+    """사용자가 이 주소로 접속하면 구글 로그인 화면으로 보냅니다."""
+    flow = get_flow()
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'
+    )
+    session['state'] = state
+    return redirect(authorization_url)
+
+@app.route('/oauth2callback')
+def oauth2callback():
+    """구글 로그인 성공 후, 구글 서버가 이 주소로 토큰(인증키)을 들고 돌아옵니다."""
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # 로컬 테스트용
+    flow = get_flow()
+    
+    # Vercel 환경에서 콜백 URL이 http로 잡히는 오류를 방지
+    auth_response = request.url.replace('http://', 'https://')
+    flow.fetch_token(authorization_response=auth_response)
+    
+    # 발급받은 인증키를 브라우저 세션에 안전하게 저장
+    credentials = flow.credentials
+    session['credentials'] = {
+        'token': credentials.token,
+        'refresh_token': credentials.refresh_token,
+        'token_uri': credentials.token_uri,
+        'client_id': credentials.client_id,
+        'client_secret': credentials.client_secret,
+        'scopes': credentials.scopes
+    }
+    return redirect('/') # 로그인 처리가 끝나면 메인 화면으로 자동 이동
+
+def get_drive_service():
+    """세션에 저장된 토큰을 꺼내서 드라이브 통신용 객체를 만듭니다."""
+    if 'credentials' not in session:
+        raise Exception("AUTH_REQUIRED") # 로그인이 안 되어 있으면 에러 발생
+    
+    creds_data = session['credentials']
+    creds = Credentials(
+        token=creds_data['token'],
+        refresh_token=creds_data.get('refresh_token'),
+        token_uri=creds_data.get('token_uri'),
+        client_id=creds_data.get('client_id'),
+        client_secret=creds_data.get('client_secret'),
+        scopes=creds_data.get('scopes')
+    )
     return build('drive', 'v3', credentials=creds)
 
 # ==============================================================================
@@ -62,7 +124,6 @@ def get_drive_service():
 def get_drive_files():
     folder_type = request.json.get('folder_type') 
     
-    # [수정] docs는 수파베이스로 분리되었으므로 album 로직만 남깁니다.
     if folder_type == 'album':
         folder_id = os.environ.get('DRIVE_FOLDER_ALBUM')
     else:
@@ -74,7 +135,6 @@ def get_drive_files():
     try:
         service = get_drive_service()
         
-        # 지정된 폴더 내의 파일/폴더 검색 (휴지통 제외)
         query = f"'{folder_id}' in parents and trashed = false"
         results = service.files().list(
             q=query, 
@@ -86,16 +146,19 @@ def get_drive_files():
         files = results.get('files', [])
         return jsonify({"status": "success", "data": files})
     except Exception as e:
+        # 로그인 정보가 없을 경우 프론트엔드에 별도 신호 전송
+        if str(e) == "AUTH_REQUIRED":
+            return jsonify({"status": "auth_required", "message": "구글 로그인이 필요합니다."}), 401
         print(f"Drive API Error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # ==============================================================================
-# [신규 추가] 구글 드라이브 앨범 폴더 생성 및 다중 파일 업로드 API
+# [수정] 구글 드라이브 앨범 폴더 생성 및 다중 파일 업로드 API
 # ==============================================================================
 @app.route('/api/drive/upload', methods=['POST'])
 def upload_drive_files():
-    folder_name = request.form.get('folder_name') # 이벤트 제목을 폴더 이름으로 사용
-    files = request.files.getlist('files') # 첨부된 사진들
+    folder_name = request.form.get('folder_name') 
+    files = request.files.getlist('files') 
     
     album_root_id = os.environ.get('DRIVE_FOLDER_ALBUM')
     
@@ -105,12 +168,10 @@ def upload_drive_files():
     try:
         service = get_drive_service()
         
-        # 1. 앨범 루트 안에 동일한 이름의 폴더가 있는지 검색
         query = f"name = '{folder_name}' and '{album_root_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
         results = service.files().list(q=query, fields="files(id, name)").execute()
         found_folders = results.get('files', [])
         
-        # 2. 폴더가 없으면 새로 생성
         if not found_folders:
             folder_metadata = {
                 'name': folder_name,
@@ -122,7 +183,6 @@ def upload_drive_files():
         else:
             target_folder_id = found_folders[0].get('id')
         
-        # 3. 타겟 폴더에 사진 파일들 업로드
         uploaded_files = []
         for f in files:
             if f.filename == '':
@@ -144,15 +204,17 @@ def upload_drive_files():
             
         return jsonify({"status": "success", "message": f"{len(uploaded_files)}개 파일 업로드 완료"})
     except Exception as e:
+        if str(e) == "AUTH_REQUIRED":
+            return jsonify({"status": "auth_required", "message": "구글 로그인이 필요합니다."}), 401
         print(f"Upload Error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # ==============================================================================
-# [신규 추가] 수파베이스 스토리지(자료실) 파일 목록 호출 API
+# [유지] 수파베이스 스토리지(자료실) 파일 목록 호출 API
 # ==============================================================================
 @app.route('/api/storage/files', methods=['POST'])
 def get_storage_files():
-    bucket_name = 'docs' # 방금 만든 수파베이스 버킷 이름
+    bucket_name = 'docs' 
     url = f"{os.environ.get('SUPABASE_URL')}/storage/v1/object/list/{bucket_name}"
     
     payload = {
@@ -169,12 +231,10 @@ def get_storage_files():
         with urllib.request.urlopen(req) as res:
             files_data = json.loads(res.read().decode('utf-8'))
             
-            # 구글 드라이브 응답과 동일한 형태로 포맷팅하여 프론트엔드 호환성 유지
             formatted_files = []
             for f in files_data:
                 if f['name'] == '.emptyFolderPlaceholder': continue
                 
-                # 수파베이스 public URL 조합 공식
                 public_url = f"{os.environ.get('SUPABASE_URL')}/storage/v1/object/public/{bucket_name}/{f['name']}"
                 
                 formatted_files.append({
