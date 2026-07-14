@@ -3,10 +3,8 @@ import urllib.request
 import json
 import os
 
-# --- [신규 추가: 구글 API 연동을 위한 필수 모듈] ---
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-from google.oauth2.credentials import Credentials
+# --- [수정: 구글 API 연동을 위한 필수 모듈 (서비스 계정 마스터 열쇠 방식)] ---
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 # ------------------------------------------------
 
@@ -40,45 +38,52 @@ def home():
     return render_template('index.html')
 
 # ==============================================================================
-# [신규 추가] 구글 로그인 토큰 검증 API
+# [수정] 구글 드라이브 서비스 계정(마스터 열쇠) 인증 및 연동 설정
 # ==============================================================================
-@app.route('/api/auth/verify', methods=['POST'])
-def verify_google_token():
-    token = request.json.get('token')
-    client_id = os.environ.get("GOOGLE_CLIENT_ID") # Vercel 환경변수에 추가될 예정입니다.
-    try:
-        # 프론트엔드에서 보낸 id_token 검증
-        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
-        if idinfo['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
-            raise ValueError('Wrong issuer.')
-        # 검증 성공 시 유저 정보 반환
-        return jsonify({"status": "success", "user": {"email": idinfo['email'], "name": idinfo.get('name', '')}})
-    except Exception as e:
-        print(f"Token Auth Error: {e}")
-        return jsonify({"status": "error", "message": "Invalid token"}), 401
+SCOPES = ['https://www.googleapis.com/auth/drive']
+
+def get_drive_service():
+    """Vercel 환경변수에 저장된 JSON(마스터 열쇠)을 읽어와 드라이브 권한을 얻습니다."""
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+    if not creds_json:
+        raise Exception("Vercel 환경변수에 GOOGLE_CREDENTIALS가 없습니다.")
+    
+    # JSON 문자열을 파이썬 딕셔너리로 변환 후 권한 객체 생성
+    creds_dict = json.loads(creds_json)
+    creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    return build('drive', 'v3', credentials=creds)
 
 # ==============================================================================
-# [신규 추가] 구글 드라이브 특정 폴더 파일 목록 호출 API
+# [수정] 구글 드라이브 특정 폴더의 파일 및 폴더 목록 호출 API (서버 직접 호출)
 # ==============================================================================
 @app.route('/api/drive/files', methods=['POST'])
 def get_drive_files():
-    access_token = request.json.get('access_token')
-    folder_id = request.json.get('folder_id') # 조회할 구글 드라이브 폴더 ID (자료실 또는 앨범)
+    # 프론트엔드에서는 'docs'(자료실) 또는 'album'(사진첩) 이라는 구분값만 보냅니다.
+    folder_type = request.json.get('folder_type') 
     
-    if not access_token or not folder_id:
-        return jsonify({"status": "error", "message": "Missing token or folder ID"}), 400
+    # 요청된 타입에 따라 환경변수에서 알맞은 폴더 ID를 꺼냅니다.
+    if folder_type == 'docs':
+        folder_id = os.environ.get('DRIVE_FOLDER_DOCS')
+    elif folder_type == 'album':
+        folder_id = os.environ.get('DRIVE_FOLDER_ALBUM')
+    else:
+        # 특정 하위 폴더 안으로 들어갈 때를 대비하여 직접 ID를 받을 수도 있게 둡니다.
+        folder_id = request.json.get('folder_id')
+        
+    if not folder_id:
+        return jsonify({"status": "error", "message": "Missing folder ID"}), 400
         
     try:
-        # 프론트엔드에서 넘어온 액세스 토큰으로 권한 증명 생성
-        creds = Credentials(token=access_token)
-        service = build('drive', 'v3', credentials=creds)
+        service = get_drive_service()
         
-        # 지정된 폴더 내의 파일 검색 (휴지통 제외)
+        # 지정된 폴더 내의 파일/폴더 검색 (휴지통 제외)
         query = f"'{folder_id}' in parents and trashed = false"
         results = service.files().list(
             q=query, 
-            fields="nextPageToken, files(id, name, mimeType, webViewLink, thumbnailLink, createdTime)", 
-            pageSize=100
+            # 파일 정보 외에 폴더 여부(mimeType) 및 마지막 수정일(modifiedTime)도 함께 가져옵니다.
+            fields="nextPageToken, files(id, name, mimeType, webViewLink, thumbnailLink, createdTime, modifiedTime)", 
+            pageSize=100,
+            orderBy="folder, modifiedTime desc" # 폴더를 먼저 보여주고, 그 다음 최신 수정일 순으로 정렬
         ).execute()
         
         files = results.get('files', [])
