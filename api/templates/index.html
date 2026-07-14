@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+    <!DOCTYPE html>
+<html lang="ko">
+<head>
     <!-- ============================================================================== -->
     <!-- [대단원 1] HTML 기본 구조 및 CSS 스타일링                                       -->
     <!-- ============================================================================== -->
@@ -13,7 +16,7 @@
     <meta name="theme-color" content="#1E3A8A">
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- [수정] 불필요해진 구글 로그인 연동 외부 스크립트 완전 삭제 완료 -->
 
     <style>
         .hide-scroll::-webkit-scrollbar { display: none; }
@@ -56,14 +59,14 @@
             </div>
             
             <div id="auth-section" class="flex items-center">
-                <div id="google-login-btn"></div>
+                <!-- [수정] 에러를 유발하던 구글 로그인 버튼 빈 태그 삭제 -->
                 
-                <div id="user-profile" class="hidden flex items-center gap-2 sm:gap-3">
+                <!-- [수정] 자동 로그인 상태이므로 hidden 클래스 삭제 및 로그아웃 버튼 제거 -->
+                <div id="user-profile" class="flex items-center gap-2 sm:gap-3">
                     <div class="text-right">
-                        <div id="user-name-display" class="text-xs sm:text-sm font-bold leading-tight"></div>
+                        <div id="user-name-display" class="text-xs sm:text-sm font-bold leading-tight text-white"></div>
                         <div id="user-email-display" class="text-[0.65rem] text-blue-300 hidden sm:block"></div>
                     </div>
-                    <button onclick="handleSignOut()" class="bg-blue-800 hover:bg-red-600 transition px-2 sm:px-3 py-1 rounded text-xs border border-blue-700 shadow-sm">로그아웃</button>
                 </div>
             </div>
         </header>
@@ -116,66 +119,22 @@
         let calYear = new Date().getFullYear();
         let calMonth = new Date().getMonth() + 1;
         
-        // [수정] 매번 초기화하지 않고, 브라우저에 저장된(로컬 스토리지) 정보를 먼저 불러옵니다.
-        let userEmail = localStorage.getItem('userEmail');
-        let userName = localStorage.getItem('userName');
+        // [수정] 구글 로그인이나 로컬 스토리지 확인 없이, 공용(가짜) 계정 하나로 고정합니다.
+        const userEmail = "team@line7.com";
+        const userName = "Line7팀";
         let editMode = null; 
 
-        // [신규 추가] 구글 로그인 성공 시 백엔드로 토큰을 보내 검증하고 세션을 생성하는 함수
-        async function handleCredentialResponse(response) {
-            try {
-                const res = await fetch('/api/auth/verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: response.credential })
-                });
-                const data = await res.json();
-                
-                if (data.status === 'success') {
-                    userEmail = data.user.email;
-                    userName = data.user.name;
-                    
-                    // [핵심] 자동 로그인을 위해 브라우저에 이메일과 이름 저장
-                    localStorage.setItem('userEmail', userEmail);
-                    localStorage.setItem('userName', userName);
-                    
-                    updateAuthUI();
-                    initApp(); 
-                } else {
-                    alert("구글 인증에 실패했습니다.");
-                }
-            } catch (error) {
-                console.error("로그인 검증 에러:", error);
-            }
-        }
+        // [수정] 불필요해진 구글 로그인 토큰 검증(handleCredentialResponse) 함수 완전 삭제
+        // [수정] 불필요해진 로그아웃(handleSignOut) 함수 완전 삭제
 
-        // [신규 추가] 로그아웃 처리 함수
-        function handleSignOut() {
-            userEmail = null;
-            userName = null;
-            
-            // [핵심] 로그아웃 시 브라우저에 저장된 정보 삭제
-            localStorage.removeItem('userEmail');
-            localStorage.removeItem('userName');
-            
-            // 상단 헤더 UI 원복
-            document.getElementById('user-profile').classList.add('hidden');
-            document.getElementById('user-profile').classList.remove('flex');
-            document.getElementById('google-login-btn').style.display = 'block';
-            
-            // 로그아웃 시 화면 데이터를 비우고 렌더링 초기화
-            db = { notices: [], tasks: [], events: [], comments: [] };
-            renderTab();
-        }
-
-        // [신규 추가] 상단 헤더 UI 업데이트 로직 분리 (재사용 목적)
+        // [수정] 상단 헤더 UI 업데이트 로직 (공용 이름 고정 및 버튼 제어 삭제)
         function updateAuthUI() {
-            document.getElementById('google-login-btn').style.display = 'none';
             const profile = document.getElementById('user-profile');
-            profile.classList.remove('hidden');
-            profile.classList.add('flex');
-            document.getElementById('user-name-display').innerText = userName;
-            document.getElementById('user-email-display').innerText = userEmail;
+            if (profile) {
+                profile.classList.remove('hidden');
+                profile.classList.add('flex');
+                document.getElementById('user-name-display').innerText = userName;
+            }
         }
 
         function formatDate(dateString) {
@@ -208,24 +167,10 @@
             return cycle[((diffDays + 3) % 8 + 8) % 8];
         }
 
-        // [수정] 화면이 켜질 때 로컬 스토리지를 검사하여 자동 로그인 처리
+        // [수정] 화면이 켜질 때 구글 버튼 렌더링 과정을 없애고, 즉시 UI를 그리고 데이터를 불러옵니다.
         window.onload = function() {
-            if (userEmail && userName) {
-                // 이미 기기에 로그인 정보가 있으면 버튼 렌더링을 생략하고 바로 UI 업데이트 및 데이터 호출
-                updateAuthUI();
-                initApp();
-            } else {
-                // 기기에 정보가 없을 때만 구글 로그인 버튼을 그림
-                google.accounts.id.initialize({
-                    // 남겨주신 클라이언트 ID를 그대로 적용했습니다.
-                    client_id: "809024272690-0ebueeohb9sv0sdoe69v69fd0ooaap3p.apps.googleusercontent.com",
-                    callback: handleCredentialResponse
-                });
-                google.accounts.id.renderButton(
-                    document.getElementById("google-login-btn"),
-                    { theme: "outline", size: "medium", type: "standard" }
-                );
-            }
+            updateAuthUI();
+            initApp();
         };
 
         // ==============================================================================
@@ -254,7 +199,6 @@
                         <button onclick="openModal('notices')" class="bg-blue-100 text-blue-700 px-3 py-1 rounded text-sm font-bold hover:bg-blue-200">+ 새 알림 등록</button>
                     </div>
                 `;
-                
                 db.notices.forEach(n => {
                     html += `
                         <div class="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500 shadow-sm col-span-full relative">
@@ -317,7 +261,6 @@
                         return t.start_date === dateStr;
                     }).forEach(t => {
                         const style = t.status === '종료' ? 'bg-gray-100 text-gray-400 line-through border-l-2 border-gray-300' : (t.is_starred ? 'bg-yellow-100 text-yellow-800 border-l-2 border-yellow-500 font-bold' : 'bg-blue-50 text-blue-800 border-l-2 border-blue-500');
-                        // [수정 2] 캘린더 일정 클릭 시 보기 모드(isView = true)로 열리도록 연동
                         dayHtml += `<div onclick="openModal('tasks', ${t.id}, true)" class="text-[0.65rem] p-1 mb-1 rounded truncate shadow-sm cursor-pointer hover:opacity-80 ${style}">${t.title}</div>`;
                     });
                     calHtml += dayHtml + `</div>`;
@@ -387,7 +330,7 @@
                                     <p class="text-sm text-gray-800 my-3 whitespace-pre-wrap leading-relaxed border-l-2 border-gray-300 pl-2"><strong>초기 증상:</strong>\n${e.content}</p>
                                     
                                     <div class="my-3 p-3 bg-gray-100 border border-dashed border-gray-300 rounded text-center text-xs text-gray-500">
-                                        📷 사진 첨부 (구글 드라이브 연동 후 활성화)
+                                        📷 사진 첨부 및 관리는 [앨범] 탭을 이용해주세요.
                                     </div>
 
                                     <div class="my-4 space-y-2 bg-white p-2 rounded border">${cmtHtml}</div>
@@ -406,33 +349,23 @@
                 }
                 main.innerHTML = html + `</div>`;
             } 
-            // [신규 추가] 탭 5(자료실) 및 탭 7(앨범) 구글 드라이브 연동 로직
+            // [수정] 탭 5(자료실) 및 탭 7(앨범) 서버 직결형 렌더링 로직
             else if (currentTab === 5 || currentTab === 7) {
                 const isAlbum = currentTab === 7;
                 const title = isAlbum ? "🖼️ 현장 사진 앨범" : "📁 도면 및 매뉴얼 자료실";
-                
-                // ⚠️ 주의: 구글 드라이브에서 직접 폴더를 열고 주소창의 폴더 고유 ID 문자열을 복사하여 아래에 각각 넣어주세요!
-                const folderId = isAlbum ? "1ZUNDkpumQxfWcXe2UTzJsLYPyWe9_RUx" : "1HqUUBuMcsDH_tnZik5mDyvkJpll8MKtm";
+                const folderType = isAlbum ? "album" : "docs"; // 백엔드로 넘길 폴더 종류 식별자
 
                 html += `<h2 class="font-bold text-blue-900 mb-3 border-b pb-1 col-span-full">${title}</h2>`;
 
-                if (typeof userEmail === 'undefined' || !userEmail) {
-                    html += `<div class="text-center py-20 text-gray-400 w-full col-span-full">구글 로그인이 필요한 메뉴입니다. 상단에서 로그인해주세요.</div>`;
-                } else if (!window.driveToken) {
-                    html += `
-                        <div class="text-center py-10 col-span-full bg-white border rounded-xl shadow-sm">
-                            <p class="mb-4 text-sm text-gray-600">안전한 데이터 열람을 위해 구글 드라이브 접근 권한이 필요합니다.</p>
-                            <button onclick="requestDriveAccess()" class="bg-blue-600 text-white px-5 py-2 rounded-lg font-bold hover:bg-blue-700 transition">구글 드라이브 연결하기</button>
-                        </div>
-                    `;
-                } else {
-                    html += `<div id="drive-contents-${currentTab}" class="col-span-full text-center py-10 text-gray-500 font-bold">데이터를 불러오는 중입니다... 🚀</div>`;
-                    fetchDriveFiles(folderId, currentTab); 
-                }
+                // [수정] 로그인 체크 등 번거로운 과정 전부 제거하고 바로 로딩 화면 표시
+                html += `<div id="drive-contents-${currentTab}" class="col-span-full text-center py-10 text-gray-500 font-bold">서버에서 드라이브 데이터를 동기화 중입니다... 🚀</div>`;
                 main.innerHTML = html + `</div>`;
+                
+                // 화면에 로딩 문구를 띄운 직후, 백엔드 서버에 데이터 요청을 보냅니다.
+                fetchDriveFiles(folderType, currentTab); 
             }
             else {
-                main.innerHTML = `<div class="text-center py-20 text-gray-400 w-full col-span-full">아직 개발 대기 중인 메뉴입니다. (클라우드 연동 필요)</div>`;
+                main.innerHTML = `<div class="text-center py-20 text-gray-400 w-full col-span-full">아직 개발 대기 중인 메뉴입니다.</div>`;
             }
         }
 
@@ -470,49 +403,47 @@
             `;
         }
 
-        // [신규 추가] 구글 드라이브 권한 요청 함수 (OAuth 2.0 Token Client)
-        function requestDriveAccess() {
-            const client = google.accounts.oauth2.initTokenClient({
-                // ⚠️ 주의: 대단원 4에 넣었던 것과 동일하게 구글 클라우드 콘솔의 클라이언트 ID를 아래에 넣어주세요!
-                client_id: "809024272690-0ebueeohb9sv0sdoe69v69fd0ooaap3p.apps.googleusercontent.com",
-                scope: 'https://www.googleapis.com/auth/drive.readonly',
-                callback: (response) => {
-                    if (response && response.access_token) {
-                        window.driveToken = response.access_token;
-                        renderTab(); // 권한 획득 후 화면을 다시 그리면 자동으로 폴더 내용 로딩이 시작됩니다.
-                    }
-                }
-            });
-            client.requestAccessToken();
-        }
+        // [수정] 기존에 있던 프론트엔드 구글 권한 요청(requestDriveAccess) 함수 완전 삭제
 
-        // [신규 추가] 구글 드라이브 파일 목록 가져오기 및 UI 렌더링 함수
-        async function fetchDriveFiles(folderId, tabIndex) {
+        // [수정] 백엔드(서버)로 폴더 종류(folder_type)만 넘겨서 데이터를 받아오는 함수로 개편
+        async function fetchDriveFiles(folderType, tabIndex) {
             try {
                 const res = await fetch('/api/drive/files', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ access_token: window.driveToken, folder_id: folderId })
+                    // 폴더 고유 ID 대신 'docs' 또는 'album' 문자열만 서버로 전송
+                    body: JSON.stringify({ folder_type: folderType }) 
                 });
                 const data = await res.json();
                 const container = document.getElementById(`drive-contents-${tabIndex}`);
                 
                 if (data.status === 'success') {
                     if (data.data.length === 0) {
-                        container.innerHTML = `<div class="text-gray-400">해당 폴더에 파일이 없습니다.</div>`;
+                        container.innerHTML = `<div class="text-gray-400 text-center py-10 w-full col-span-full">해당 폴더에 파일이 없습니다.</div>`;
                         return;
                     }
                     
                     let fileHtml = `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 w-full">`;
                     data.data.forEach(f => {
+                        // [핵심] 구글 드라이브 응답을 분석하여 폴더인지 이미지인지 구분
+                        const isFolder = f.mimeType === 'application/vnd.google-apps.folder';
                         const isImg = f.mimeType.includes('image');
-                        const icon = isImg ? '🖼️' : '📄';
-                        const thumb = f.thumbnailLink ? `<img src="${f.thumbnailLink}" class="w-full h-28 object-cover rounded mb-2 border">` : `<div class="w-full h-28 bg-gray-100 flex items-center justify-center rounded mb-2 text-4xl border">${icon}</div>`;
+                        const icon = isFolder ? '📁' : (isImg ? '🖼️' : '📄');
                         
+                        // 썸네일 디자인 (폴더는 큰 아이콘으로, 이미지는 실제 썸네일 표시)
+                        const thumb = isFolder 
+                            ? `<div class="w-full h-28 bg-blue-50 flex items-center justify-center rounded mb-2 text-5xl border border-blue-200">${icon}</div>` 
+                            : (f.thumbnailLink 
+                                ? `<img src="${f.thumbnailLink}" class="w-full h-28 object-cover rounded mb-2 border">` 
+                                : `<div class="w-full h-28 bg-gray-100 flex items-center justify-center rounded mb-2 text-4xl border">${icon}</div>`);
+                        
+                        const modDate = f.modifiedTime ? f.modifiedTime.substring(0, 10) : '';
+
                         fileHtml += `
                             <a href="${f.webViewLink}" target="_blank" class="border p-3 rounded-lg shadow-sm hover:shadow-md transition flex flex-col items-center bg-white cursor-pointer text-center hover:bg-gray-50">
                                 ${thumb}
-                                <span class="text-xs font-bold text-gray-700 truncate w-full" title="${f.name}">${f.name}</span>
+                                <span class="text-xs font-bold text-gray-800 truncate w-full mb-1" title="${f.name}">${f.name}</span>
+                                <span class="text-[0.65rem] text-gray-400">${modDate}</span>
                             </a>
                         `;
                     });
@@ -520,18 +451,17 @@
                     container.innerHTML = fileHtml;
                     container.classList.remove('text-center', 'py-10');
                 } else {
-                    container.innerHTML = `<div class="text-red-500 font-bold">파일 로딩 실패: ${data.message}</div>`;
+                    container.innerHTML = `<div class="text-red-500 font-bold text-center py-10 w-full col-span-full">파일 로딩 실패: ${data.message}</div>`;
                 }
             } catch (e) {
-                document.getElementById(`drive-contents-${tabIndex}`).innerHTML = `<div class="text-red-500 font-bold">네트워크 오류가 발생했습니다.</div>`;
+                document.getElementById(`drive-contents-${tabIndex}`).innerHTML = `<div class="text-red-500 font-bold text-center py-10 w-full col-span-full">네트워크 오류가 발생했습니다.</div>`;
             }
         }
 
-// 🚨 ==============================================================================
+        // 🚨 ==============================================================================
         // 🚨 [대단원 6] 자바스크립트: 모달 폼 동적 제어 및 데이터 제출                      
         // 🚨 ==============================================================================
         
-        // [수정 3] 날짜 입력칸 숨김/표시 방식을 확실한 style.display 방식으로 변경
         function toggleDateInput() {
             const val = document.getElementById('m_dtype').value;
             const single = document.getElementById('date_single');
@@ -548,7 +478,6 @@
             }
         }
 
-        // [수정 2] 모달창 열기 (등록/수정/조회 통합) - isView 파라미터 추가
         function openModal(forceTable = null, editId = null, isView = false) {
             editMode = editId ? { table: forceTable, id: editId } : null;
             const table = forceTable || (currentTab === 0 ? 'notices' : (currentTab === 3 || currentTab === 4) ? 'events' : 'tasks');
@@ -556,14 +485,11 @@
             
             let item = editId ? db[table].find(x => x.id === editId) : {};
             
-            // 제목 분기
             if (isView) document.getElementById('modalTitle').innerText = "일정 상세보기";
             else document.getElementById('modalTitle').innerText = editId ? "내용 수정하기" : "새로 등록하기";
 
-            // 비활성화(disabled) 텍스트 속성 추가
             const dis = isView ? "disabled" : "";
 
-            // [수정 4] 텍스트 박스 높이를 h-[300px] 로 대폭 확장
             if (table === 'notices') {
                 body.innerHTML = `<textarea id="m_content" ${dis} class="w-full border p-3 rounded-lg h-[300px] outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" placeholder="중요알림 내용">${item.content || ''}</textarea>`;
             } 
@@ -603,11 +529,9 @@
                 if(item.category) document.getElementById('m_cat').value = item.category;
                 if(item.date_type) { document.getElementById('m_dtype').value = item.date_type; }
                 
-                // 등록 창이 뜰 때 초기 날짜 형태 잡아주기
                 if(!isView) toggleDateInput(); 
             }
 
-            // [수정 2] 모달 하단 버튼을 보기 모드 여부에 따라 변경
             let buttonsHtml = '';
             if (isView) {
                 buttonsHtml = `
@@ -622,7 +546,6 @@
             document.getElementById('actionModal').classList.remove('hidden');
         }
 
-        // [수정 2] 캘린더에서 보기 모드로 열었을 때, 박스 잠금을 풀고 저장버튼을 띄우는 함수
         function enableEditMode() {
             document.querySelectorAll('#modalBody input, #modalBody textarea, #modalBody select').forEach(el => el.disabled = false);
             document.getElementById('modalTitle').innerText = "내용 수정하기";
@@ -636,15 +559,11 @@
         }
 
         async function submitData() {
-            // [신규 추가] 로그인 확인 방어 로직
-            if (!editMode && (!userEmail || userEmail === "")) {
-                alert("구글 로그인이 필요합니다.");
-                return;
-            }
+            // [수정] 방어 로직 완전히 삭제 (누구나 바로 저장 가능)
 
             const table = editMode ? editMode.table : (document.getElementById('m_cat') ? 'tasks' : document.getElementById('m_date') ? 'events' : 'notices');
             
-            // [수정] DEFAULT_EMAIL(하드코딩) 대신, 로그인 세션에 저장된 실제 userEmail 변수를 사용하도록 변경
+            // 공용 계정 변수인 userEmail을 사용하여 서버에 전송
             let payload = editMode ? {} : { user_email: userEmail };
 
             if(table === 'notices') {
@@ -695,15 +614,11 @@
         }
         
         async function addComment(eventId) {
-            // [신규 추가] 로그인 확인 방어 로직
-            if (!userEmail || userEmail === "") {
-                alert("구글 로그인이 필요합니다.");
-                return;
-            }
-
+            // [수정] 로그인 확인 방어 로직 완전 삭제 (프리패스)
             const val = document.getElementById(`cmt_new_${eventId}`).value;
+            
             if(val) { 
-                // [수정] DEFAULT_EMAIL을 실제 로그인 세션 변수인 userEmail로 교체
+                // [수정] 공용 세션 변수인 userEmail(team@line7.com)을 사용하여 댓글 기록
                 await fetch('/api/event_comments', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({event_id: eventId, content: val, user_email: userEmail}) }); 
                 initApp(); 
             }
@@ -721,7 +636,7 @@
             } 
         }
         
-        window.onload = initApp;
+        // [수정] window.onload = initApp; 은 대단원 4에서 이미 통합 처리했으므로 중복 충돌을 막기 위해 삭제했습니다.
     </script>
 </body>
 </html>
