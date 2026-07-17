@@ -738,7 +738,7 @@
             const uploadUrl = `${supabaseUrl}/storage/v1/object/docs/${fileName}`;
             
             // [중요 수정] 인증 절차를 통과하기 위해 수파베이스 공개 키 설정 (수파베이스 콘솔의 API 메뉴에 있는 anon 키를 텍스트로 붙여넣으세요!)
-            const SUPABASE_ANON_KEY = '여기에_수파베이스_ANON_KEY를_붙여넣으세요'; 
+            const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0b2JnZ29tdGlxa2xwcWl4bGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MjMxOTUsImV4cCI6MjA5NzA5OTE5NX0.SVLx8kUYWQZm0aNsn8ieKnDURgAMcMP-KIdwO9Uymg4'; 
             
             try {
                 const res = await fetch(uploadUrl, {
