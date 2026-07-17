@@ -3,6 +3,7 @@ import urllib.request
 import json
 import os
 import io # [신규 추가: 앨범 다중 파일 업로드를 위한 모듈]
+from datetime import timedelta # [신규 추가] 세션 유지 기간 설정을 위한 모듈
 
 # --- [수정: 구글 API 연동을 위한 필수 모듈 (OAuth 2.0 사용자 로그인 방식)] ---
 from google.oauth2.credentials import Credentials
@@ -12,6 +13,8 @@ from googleapiclient.http import MediaIoBaseUpload
 # ------------------------------------------------
 
 app = Flask(__name__)
+# [신규 추가] 세션 유지 기간을 31일로 설정 (모바일 앱 껐다 켜도 유지)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=31)
 # [신규 추가] Vercel 서버리스 환경에서 로그인 세션 유지를 위한 고정 암호키 설정
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "line7-mech-c-super-secret-key") 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -88,6 +91,9 @@ def oauth2callback():
     # Vercel 환경에서 콜백 URL이 http로 잡히는 오류를 방지
     auth_response = request.url.replace('http://', 'https://')
     flow.fetch_token(authorization_response=auth_response)
+    
+    # [신규 추가] 로그인 성공 시 이 세션을 '영구적(위에서 설정한 31일)'으로 만듦
+    session.permanent = True
     
     # 발급받은 인증키를 브라우저 세션에 안전하게 저장
     credentials = flow.credentials
