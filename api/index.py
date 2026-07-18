@@ -141,6 +141,32 @@ def get_presigned_url():
         print(f"R2 Presigned Error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# ==============================================================================
+# [완전 신규] R2 스토리지 파일 및 폴더 삭제 API
+# ==============================================================================
+@app.route('/api/r2/delete', methods=['POST'])
+def delete_r2_item():
+    item_key = request.json.get('key')  # 파일의 키 또는 폴더의 Prefix
+    is_folder = request.json.get('is_folder', False)  # 폴더 여부 플래그
+    bucket = os.environ.get('R2_BUCKET_NAME')
+    
+    try:
+        s3 = get_r2_client()
+        if is_folder:
+            # 폴더일 경우: 해당 Prefix(경로)를 포함하는 모든 파일 검색 후 일괄 삭제
+            response = s3.list_objects_v2(Bucket=bucket, Prefix=item_key)
+            if 'Contents' in response:
+                objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+                s3.delete_objects(Bucket=bucket, Delete={'Objects': objects_to_delete})
+        else:
+            # 단일 파일일 경우: 바로 삭제
+            s3.delete_object(Bucket=bucket, Key=item_key)
+            
+        return jsonify({"status": "success"})
+    except Exception as e:
+        print(f"R2 Delete Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # 만능 데이터 호출 API (조회/생성)
 @app.route('/api/<table>', methods=['GET', 'POST'])
 def handle_table(table):
@@ -149,6 +175,14 @@ def handle_table(table):
         if table == 'tasks': query = "?order=start_date.desc"
         if table == 'events': query = "?order=event_date.desc"
         if table == 'event_comments': query = "?order=created_at.asc"
+        
+        # [신규 추가] 앨범 댓글 테이블 호출 시: 작성순 정렬 및 특정 폴더만 필터링 기능 추가
+        if table == 'album_comments':
+            query = "?order=created_at.asc"
+            folder_path = request.args.get('folder_path')
+            if folder_path:
+                encoded_path = urllib.parse.quote(folder_path, safe='')
+                query += f"&folder_path=eq.{encoded_path}"
         
         data = db_request(table, 'GET', query)
         
