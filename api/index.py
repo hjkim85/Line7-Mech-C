@@ -2,14 +2,12 @@ from flask import Flask, render_template, request, jsonify, send_from_directory,
 import urllib.request
 import json
 import os
-import io # [신규 추가: 앨범 다중 파일 업로드를 위한 모듈]
 from datetime import timedelta # [신규 추가] 세션 유지 기간 설정을 위한 모듈
 
-# --- [수정: 구글 API 연동을 위한 필수 모듈 (OAuth 2.0 사용자 로그인 방식)] ---
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload 
+# --- [신규 추가: Cloudflare R2 통신을 위한 AWS S3 호환 모듈] ---
+import boto3
+from botocore.client import Config
+import urllib.parse
 # ------------------------------------------------
 
 app = Flask(__name__)
@@ -46,215 +44,101 @@ def home():
     return render_template('index.html')
 
 # ==============================================================================
-# [수정] 구글 드라이브 OAuth 2.0 사용자 인증 및 로그인 라우터 설정
+# [신규 통합] Cloudflare R2 스토리지 클라이언트 생성 함수
 # ==============================================================================
-SCOPES = ['https://www.googleapis.com/auth/drive']
-
-def get_flow():
-    """환경변수에 등록된 OAuth 정보를 바탕으로 인증 흐름(Flow) 객체를 생성합니다."""
-    client_id = os.environ.get("GOOGLE_CLIENT_ID")
-    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
-    redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI")
-    
-    client_config = {
-        "web": {
-            "client_id": client_id,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_secret": client_secret,
-            "redirect_uris": [redirect_uri]
-        }
-    }
-    flow = Flow.from_client_config(client_config, scopes=SCOPES)
-    flow.redirect_uri = redirect_uri
-    return flow
-
-@app.route('/auth/login')
-def login():
-    """사용자가 이 주소로 접속하면 구글 로그인 화면으로 보냅니다."""
-    flow = get_flow()
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true',
-        prompt='consent'
+def get_r2_client():
+    return boto3.client(
+        's3',
+        endpoint_url=os.environ.get('R2_ENDPOINT_URL'),
+        aws_access_key_id=os.environ.get('R2_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.environ.get('R2_SECRET_ACCESS_KEY'),
+        region_name='auto',
+        config=Config(signature_version='s3v4')
     )
-    session['state'] = state
-    return redirect(authorization_url)
-
-@app.route('/oauth2callback')
-def oauth2callback():
-    """구글 로그인 성공 후, 구글 서버가 이 주소로 토큰(인증키)을 들고 돌아옵니다."""
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # 로컬 테스트용
-    flow = get_flow()
-    
-    # Vercel 환경에서 콜백 URL이 http로 잡히는 오류를 방지
-    auth_response = request.url.replace('http://', 'https://')
-    flow.fetch_token(authorization_response=auth_response)
-    
-    # [신규 추가] 로그인 성공 시 이 세션을 '영구적(위에서 설정한 31일)'으로 만듦
-    session.permanent = True
-    
-    # 발급받은 인증키를 브라우저 세션에 안전하게 저장
-    credentials = flow.credentials
-    session['credentials'] = {
-        'token': credentials.token,
-        'refresh_token': credentials.refresh_token,
-        'token_uri': credentials.token_uri,
-        'client_id': credentials.client_id,
-        'client_secret': credentials.client_secret,
-        'scopes': credentials.scopes
-    }
-    return redirect('/') # 로그인 처리가 끝나면 메인 화면으로 자동 이동
-
-def get_drive_service():
-    """세션에 저장된 토큰을 꺼내서 드라이브 통신용 객체를 만듭니다."""
-    if 'credentials' not in session:
-        raise Exception("AUTH_REQUIRED") # 로그인이 안 되어 있으면 에러 발생
-    
-    creds_data = session['credentials']
-    creds = Credentials(
-        token=creds_data['token'],
-        refresh_token=creds_data.get('refresh_token'),
-        token_uri=creds_data.get('token_uri'),
-        client_id=creds_data.get('client_id'),
-        client_secret=creds_data.get('client_secret'),
-        scopes=creds_data.get('scopes')
-    )
-    return build('drive', 'v3', credentials=creds)
 
 # ==============================================================================
-# [수정] 구글 드라이브 특정 폴더의 파일 및 폴더 목록 호출 API (앨범 전용)
+# [신규 통합] R2 스토리지 파일 및 폴더 목록 호출 API (자료실/앨범 공용)
 # ==============================================================================
-@app.route('/api/drive/files', methods=['POST'])
-def get_drive_files():
-    folder_type = request.json.get('folder_type') 
-    
-    if folder_type == 'album':
-        folder_id = os.environ.get('DRIVE_FOLDER_ALBUM')
-    else:
-        folder_id = request.json.get('folder_id')
-        
-    if not folder_id:
-        return jsonify({"status": "error", "message": "Missing folder ID"}), 400
-        
-    try:
-        service = get_drive_service()
-        
-        query = f"'{folder_id}' in parents and trashed = false"
-        results = service.files().list(
-            q=query, 
-            fields="nextPageToken, files(id, name, mimeType, webViewLink, thumbnailLink, createdTime, modifiedTime)", 
-            pageSize=100,
-            orderBy="folder, modifiedTime desc" 
-        ).execute()
-        
-        files = results.get('files', [])
-        return jsonify({"status": "success", "data": files})
-    except Exception as e:
-        # 로그인 정보가 없을 경우 프론트엔드에 별도 신호 전송
-        if str(e) == "AUTH_REQUIRED":
-            return jsonify({"status": "auth_required", "message": "구글 로그인이 필요합니다."}), 401
-        print(f"Drive API Error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-# ==============================================================================
-# [수정] 구글 드라이브 앨범 폴더 생성 및 다중 파일 업로드 API
-# ==============================================================================
-@app.route('/api/drive/upload', methods=['POST'])
-def upload_drive_files():
-    folder_name = request.form.get('folder_name') 
-    files = request.files.getlist('files') 
-    
-    album_root_id = os.environ.get('DRIVE_FOLDER_ALBUM')
-    
-    if not folder_name or not album_root_id:
-        return jsonify({"status": "error", "message": "Missing folder info"}), 400
-        
-    try:
-        service = get_drive_service()
-        
-        query = f"name = '{folder_name}' and '{album_root_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        results = service.files().list(q=query, fields="files(id, name)").execute()
-        found_folders = results.get('files', [])
-        
-        if not found_folders:
-            folder_metadata = {
-                'name': folder_name,
-                'mimeType': 'application/vnd.google-apps.folder',
-                'parents': [album_root_id]
-            }
-            target_folder = service.files().create(body=folder_metadata, fields='id').execute()
-            target_folder_id = target_folder.get('id')
-        else:
-            target_folder_id = found_folders[0].get('id')
-        
-        uploaded_files = []
-        for f in files:
-            if f.filename == '':
-                continue
-                
-            file_metadata = {
-                'name': f.filename,
-                'parents': [target_folder_id]
-            }
-            
-            media = MediaIoBaseUpload(io.BytesIO(f.read()), mimetype=f.mimetype, resumable=True)
-            
-            uploaded_file = service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id, name, webViewLink'
-            ).execute()
-            uploaded_files.append(uploaded_file)
-            
-        return jsonify({"status": "success", "message": f"{len(uploaded_files)}개 파일 업로드 완료"})
-    except Exception as e:
-        if str(e) == "AUTH_REQUIRED":
-            return jsonify({"status": "auth_required", "message": "구글 로그인이 필요합니다."}), 401
-        print(f"Upload Error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-# ==============================================================================
-# [유지] 수파베이스 스토리지(자료실) 파일 목록 호출 API
-# ==============================================================================
-@app.route('/api/storage/files', methods=['POST'])
-def get_storage_files():
-    bucket_name = 'docs' 
-    url = f"{os.environ.get('SUPABASE_URL')}/storage/v1/object/list/{bucket_name}"
-    
-    payload = {
-        "prefix": "",
-        "limit": 100,
-        "offset": 0,
-        "sortBy": {"column": "created_at", "order": "desc"}
-    }
-    
-    req = urllib.request.Request(url, headers=get_headers(), method='POST')
-    req.data = json.dumps(payload).encode('utf-8')
+@app.route('/api/r2/files', methods=['POST'])
+def get_r2_files():
+    prefix = request.json.get('prefix', '') # 예: 'docs/', 'album/' 또는 'album/이벤트명/'
+    bucket = os.environ.get('R2_BUCKET_NAME')
     
     try:
-        with urllib.request.urlopen(req) as res:
-            files_data = json.loads(res.read().decode('utf-8'))
-            
-            formatted_files = []
-            for f in files_data:
-                if f['name'] == '.emptyFolderPlaceholder': continue
-                
-                public_url = f"{os.environ.get('SUPABASE_URL')}/storage/v1/object/public/{bucket_name}/{f['name']}"
-                
-                formatted_files.append({
-                    "id": f["id"],
-                    "name": f["name"],
-                    "mimeType": f["metadata"]["mimetype"],
-                    "webViewLink": public_url,
-                    "thumbnailLink": public_url if "image" in f["metadata"]["mimetype"] else None,
-                    "modifiedTime": f["updated_at"]
+        s3 = get_r2_client()
+        # Delimiter='/' 옵션을 주면 R2가 알아서 '폴더'와 '파일'을 구분해서 결과를 반환합니다.
+        response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix, Delimiter='/')
+        files_data = []
+        
+        # 1. 하위 폴더 목록 추출
+        if 'CommonPrefixes' in response:
+            for cp in response['CommonPrefixes']:
+                folder_name = cp['Prefix'].replace(prefix, '').strip('/')
+                files_data.append({
+                    "id": cp['Prefix'], # 다음 탐색을 위한 경로 자체를 ID로 사용
+                    "name": folder_name,
+                    "mimeType": "application/vnd.google-apps.folder", # 프론트엔드 호환성 유지
+                    "webViewLink": "#"
                 })
-            
-            return jsonify({"status": "success", "data": formatted_files})
+                
+        # 2. 파일 목록 추출
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                if obj['Key'] == prefix: continue # 폴더 자체(껍데기)는 제외
+                
+                file_name = obj['Key'].replace(prefix, '')
+                # R2는 기본적으로 비공개이므로, 코드에서 1시간짜리 임시 열람(GET) 통행증을 발급해 줍니다.
+                presigned_url = s3.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': bucket, 'Key': obj['Key']},
+                    ExpiresIn=3600
+                )
+                
+                is_img = file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic'))
+                
+                files_data.append({
+                    "id": obj['Key'],
+                    "name": file_name,
+                    "mimeType": "image/*" if is_img else "application/octet-stream",
+                    "webViewLink": presigned_url,
+                    "thumbnailLink": presigned_url if is_img else None,
+                    "modifiedTime": obj['LastModified'].strftime('%Y-%m-%d %H:%M')
+                })
+                
+        return jsonify({"status": "success", "data": files_data})
     except Exception as e:
-        print(f"Storage API Error: {e}")
+        print(f"R2 List Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# ==============================================================================
+# [신규 통합] Vercel을 거치지 않는 '직통 업로드(Presigned URL)' 티켓 발급 API
+# ==============================================================================
+@app.route('/api/r2/presigned', methods=['POST'])
+def get_presigned_url():
+    file_name = request.json.get('file_name')
+    file_type = request.json.get('file_type')
+    prefix = request.json.get('prefix') # 'docs/' 또는 'album/폴더명/'
+    
+    # URL 인코딩 문제 방지를 위해 파일명 안전 처리
+    safe_file_name = urllib.parse.unquote(file_name)
+    object_key = f"{prefix}{safe_file_name}"
+    bucket = os.environ.get('R2_BUCKET_NAME')
+    
+    try:
+        s3 = get_r2_client()
+        # 프론트엔드에서 직접 R2로 쏠 수 있도록 1시간짜리 '업로드 전용(PUT) 통행증'을 발급
+        presigned_url = s3.generate_presigned_url(
+            ClientMethod='put_object',
+            Params={
+                'Bucket': bucket,
+                'Key': object_key,
+                'ContentType': file_type
+            },
+            ExpiresIn=3600
+        )
+        return jsonify({"status": "success", "url": presigned_url, "key": object_key})
+    except Exception as e:
+        print(f"R2 Presigned Error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # 만능 데이터 호출 API (조회/생성)
