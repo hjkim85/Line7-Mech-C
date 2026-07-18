@@ -482,18 +482,24 @@
             `;
         }
 
-        // [수정] 이원화된 폴더(자료실/앨범)에 맞추어 API를 분기하고 앱 내 폴더 탐색기를 구현합니다.
+        // [수정] 이원화된 폴더(자료실/앨범) 통신을 Cloudflare R2 단일 API로 통합
         async function fetchDriveFiles(folderType, tabIndex, targetFolderId = null) {
             try {
-                // 자료실(docs)은 수파베이스 통신, 앨범(album)은 구글 드라이브 통신
-                const apiUrl = folderType === 'docs' ? '/api/storage/files' : '/api/drive/files';
-                const reqBody = folderType === 'docs' ? {} : (targetFolderId ? { folder_id: targetFolderId } : { folder_type: folderType });
+                // R2 통합 파일 리스트 호출 API
+                const apiUrl = '/api/r2/files';
+                
+                // 검색할 상위 폴더 경로(prefix) 설정
+                let prefix = folderType === 'docs' ? 'docs/' : 'album/';
+                if (folderType === 'album' && targetFolderId) {
+                    prefix = targetFolderId; // R2 API는 폴더 경로 자체를 ID로 사용함 (예: 'album/250720_이벤트/')
+                }
 
                 const res = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(reqBody) 
+                    body: JSON.stringify({ prefix: prefix }) 
                 });
+                
                 const data = await res.json();
                 const container = document.getElementById(`drive-contents-${tabIndex}`);
                 
@@ -517,7 +523,7 @@
                         
                         const modDate = f.modifiedTime ? f.modifiedTime.substring(0, 10) : '';
 
-                        // [핵심] 폴더면 클릭 시 내부 탐색(enterFolder) 실행, 파일이면 새 창(webViewLink) 열기
+                        // 폴더면 클릭 시 내부 탐색(enterFolder) 실행, 파일이면 새 창(webViewLink) 열기
                         if (isFolder) {
                             fileHtml += `
                                 <div onclick="enterFolder('${f.id}')" class="border p-3 rounded-lg shadow-sm hover:shadow-md transition flex flex-col items-center bg-white cursor-pointer text-center hover:bg-gray-50">
@@ -539,19 +545,8 @@
                     fileHtml += `</div>`;
                     container.innerHTML = fileHtml;
                     container.classList.remove('text-center', 'py-10');
-                } else if (data.status === 'auth_required') {
-                    // [신규 수정] 로그인 권한 없음 감지 시, 에러 메시지 대신 로그인 유도 버튼 출력
-                    container.innerHTML = `
-                        <div class="flex flex-col items-center justify-center py-10 w-full col-span-full">
-                            <p class="text-gray-500 font-bold mb-4">앨범 기능을 사용하려면 구글 인증이 필요합니다.</p>
-                            <button onclick="window.location.href='/auth/login'" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg shadow-sm font-bold hover:bg-gray-50 flex items-center transition">
-                                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-5 h-5 mr-2"> 구글 계정으로 시작하기
-                            </button>
-                        </div>
-                    `;
-                    container.classList.remove('text-center', 'py-10');
                 } else {
-                    container.innerHTML = `<div class="text-red-500 font-bold text-center py-10 w-full col-span-full">파일 로딩 실패</div>`;
+                    container.innerHTML = `<div class="text-red-500 font-bold text-center py-10 w-full col-span-full">파일 로딩 실패: ${data.message}</div>`;
                 }
             } catch (e) {
                 document.getElementById(`drive-contents-${tabIndex}`).innerHTML = `<div class="text-red-500 font-bold text-center py-10 w-full col-span-full">네트워크 오류가 발생했습니다.</div>`;
@@ -724,7 +719,7 @@
             } catch(e) { alert("저장 실패했습니다."); }
         }
 
-        // [신규 수정] 수파베이스 자료실 스토리지 다이렉트 업로드 (API KEY 탑재)
+        // [신규 수정] Cloudflare R2 자료실 스토리지 직통 업로드
         async function uploadDocs() {
             const fileInput = document.getElementById('m_files');
             if(fileInput.files.length === 0) return alert("자료를 선택해주세요.");
@@ -733,38 +728,38 @@
             const statusDiv = document.getElementById('m_upload_status');
             statusDiv.classList.remove('hidden');
             
-            const supabaseUrl = 'https://htobggomtiqklpqixllj.supabase.co';
-            const fileName = encodeURIComponent(file.name);
-            const uploadUrl = `${supabaseUrl}/storage/v1/object/docs/${fileName}`;
-            
-            // [중요 수정] 인증 절차를 통과하기 위해 수파베이스 공개 키 설정 (수파베이스 콘솔의 API 메뉴에 있는 anon 키를 텍스트로 붙여넣으세요!)
-            const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0b2JnZ29tdGlxa2xwcWl4bGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MjMxOTUsImV4cCI6MjA5NzA5OTE5NX0.SVLx8kUYWQZm0aNsn8ieKnDURgAMcMP-KIdwO9Uymg4'; 
-            
             try {
-                const res = await fetch(uploadUrl, {
-                    method: 'POST', 
-                    headers: { 
-                        'Content-Type': file.type || 'application/octet-stream',
-                        'apikey': SUPABASE_ANON_KEY,                     // [신규 추가] 헤더 인증
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`   // [신규 추가] 헤더 인증
-                    },
+                // 1. 백엔드에서 1시간짜리 '업로드 통행증(Presigned URL)' 발급받기
+                const ticketRes = await fetch('/api/r2/presigned', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_name: file.name, file_type: file.type || 'application/octet-stream', prefix: 'docs/' })
+                });
+                const ticketData = await ticketRes.json();
+                
+                if (ticketData.status !== 'success') throw new Error(ticketData.message);
+
+                // 2. 발급받은 통행증으로 Cloudflare R2에 Vercel을 거치지 않고 직접 쏘기
+                const uploadRes = await fetch(ticketData.url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': file.type || 'application/octet-stream' },
                     body: file
                 });
-                if(res.ok) {
+
+                if(uploadRes.ok) {
                     alert("자료실 업로드 완료!");
                     closeModal();
                     renderTab();
                 } else {
-                    alert("업로드 실패: 권한이 없거나 동명의 파일이 존재합니다.");
-                    statusDiv.classList.add('hidden');
+                    throw new Error("R2 클라우드 다이렉트 업로드 실패");
                 }
             } catch(e) {
-                alert("업로드 중 오류가 발생했습니다.");
+                alert("업로드 중 오류가 발생했습니다. 다시 시도해주세요.");
                 statusDiv.classList.add('hidden');
             }
         }
 
-        // [신규 수정] 앨범 탭에서 다중 이미지 업로드 및 권한 만료 처리
+        // [신규 수정] 앨범 탭 다중 이미지 R2 직통 업로드
         async function uploadAlbum() {
             const folderName = document.getElementById('m_folder_name').value;
             const fileInput = document.getElementById('m_files');
@@ -775,36 +770,43 @@
             const statusDiv = document.getElementById('m_upload_status');
             statusDiv.classList.remove('hidden');
 
-            const formData = new FormData();
-            formData.append('folder_name', folderName);
-            
-            for(let i=0; i<fileInput.files.length; i++) {
-                const compressed = await compressImage(fileInput.files[i]);
-                formData.append('files', compressed, compressed.name);
-            }
-
             try {
-                const res = await fetch('/api/drive/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                if(data.status === 'success') {
-                    alert("앨범 업로드 완료!");
-                    closeModal();
-                    renderTab();
-                } else if (data.status === 'auth_required') {
-                    // [신규 추가] 로그인 풀렸을 때 바로 구글 화면으로 보냄
-                    alert("구글 로그인 인증이 만료되었습니다. 안전을 위해 로그인 창으로 이동합니다.");
-                    window.location.href = '/auth/login';
-                } else {
-                    alert("업로드 실패: " + data.message);
-                    statusDiv.classList.add('hidden');
+                // 앨범 내 생성될 특정 폴더의 경로 (마지막에 / 필수)
+                const prefix = `album/${folderName}/`;
+
+                for(let i=0; i<fileInput.files.length; i++) {
+                    // 브라우저에서 이미지 자체 압축
+                    const compressed = await compressImage(fileInput.files[i]);
+                    
+                    // 1. 각 사진별 업로드 통행증 발급
+                    const ticketRes = await fetch('/api/r2/presigned', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_name: compressed.name, file_type: compressed.type, prefix: prefix })
+                    });
+                    const ticketData = await ticketRes.json();
+                    if (ticketData.status !== 'success') throw new Error(ticketData.message);
+
+                    // 2. R2로 직접 쏘기
+                    const uploadRes = await fetch(ticketData.url, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': compressed.type },
+                        body: compressed
+                    });
+                    
+                    if(!uploadRes.ok) throw new Error("사진 전송 실패");
                 }
+
+                alert("앨범 업로드 완료!");
+                closeModal();
+                renderTab();
             } catch(e) {
-                alert("네트워크 통신 중 오류가 발생했습니다.");
+                alert("업로드 중 통신 오류가 발생했습니다.");
                 statusDiv.classList.add('hidden');
             }
         }
 
-        // [신규 수정] 이벤트 상세 화면에서 바로 사진 첨부 (권한 만료 감지)
+        // [신규 수정] 이벤트 상세 화면 사진 첨부 R2 직통 업로드
         async function uploadEventPhotos(eventId, eventTitle) {
             const fileInput = document.getElementById(`evt_files_${eventId}`);
             if(fileInput.files.length === 0) return;
@@ -817,31 +819,36 @@
             const statusDiv = document.getElementById(`evt_upload_status_${eventId}`);
             statusDiv.classList.remove('hidden');
 
-            const formData = new FormData();
-            formData.append('folder_name', eventTitle); 
-            
-            for(let i=0; i<fileInput.files.length; i++) {
-                const compressed = await compressImage(fileInput.files[i]);
-                formData.append('files', compressed, compressed.name);
-            }
-
             try {
-                const res = await fetch('/api/drive/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                if(data.status === 'success') {
-                    alert("이벤트 사진 첨부 완료! 앨범 탭에서 확인할 수 있습니다.");
-                } else if (data.status === 'auth_required') {
-                    // [신규 추가] 로그인 안 된 상태면 파일 선택 후 업로드 시 로그인 창으로 이동
-                    alert("사진을 첨부하려면 구글 로그인이 필요합니다. 화면이 전환됩니다.");
-                    window.location.href = '/auth/login';
-                } else {
-                    alert("업로드 실패: " + data.message);
+                // 이벤트 제목으로 R2에 앨범 폴더 자동 생성 경로 지정
+                const prefix = `album/${eventTitle}/`;
+
+                for(let i=0; i<fileInput.files.length; i++) {
+                    const compressed = await compressImage(fileInput.files[i]);
+                    
+                    const ticketRes = await fetch('/api/r2/presigned', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_name: compressed.name, file_type: compressed.type, prefix: prefix })
+                    });
+                    const ticketData = await ticketRes.json();
+                    if (ticketData.status !== 'success') throw new Error(ticketData.message);
+
+                    const uploadRes = await fetch(ticketData.url, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': compressed.type },
+                        body: compressed
+                    });
+                    
+                    if(!uploadRes.ok) throw new Error("사진 전송 실패");
                 }
+                
+                alert("이벤트 사진 첨부 완료! 앨범 탭에서 확인할 수 있습니다.");
             } catch(e) {
-                alert("네트워크 오류가 발생했습니다.");
+                alert("업로드 중 네트워크 오류가 발생했습니다.");
             } finally {
                 statusDiv.classList.add('hidden');
-                fileInput.value = ''; // 다음 업로드를 위해 인풋 클리어
+                fileInput.value = ''; 
             }
         }
         
