@@ -136,7 +136,8 @@
     <script>
         // 🚨 (채팅창 렌더링 오류 대비용 주석) 이곳이 [대단원 4]의 시작 부분입니다!
 
-        let db = { notices: [], tasks: [], events: [], comments: [] };
+        // [수정] 앨범 댓글 상태 저장을 위해 albumComments 배열 추가
+        let db = { notices: [], tasks: [], events: [], comments: [], albumComments: [] };
         let currentTab = 0;
         let calYear = new Date().getFullYear();
         let calMonth = new Date().getMonth() + 1;
@@ -479,6 +480,21 @@
                 `;
                 html += navHtml;
                 html += `<div id="drive-contents-${currentTab}" class="col-span-full text-center py-10 text-gray-500 font-bold"><div class="spinner border-gray-400 border-t-transparent w-5 h-5 border-2 mb-2"></div><br>데이터를 동기화 중입니다...</div>`;
+                
+                // [신규 추가] 앨범 상세 폴더 안으로 들어왔을 때 하단에 댓글 영역 뼈대 추가
+                if (isAlbum && currentFolderId) {
+                    html += `
+                        <div id="album-comments-section" class="col-span-full mt-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                            <h3 class="font-bold text-blue-900 mb-3 border-b pb-2 text-sm">💬 이 앨범에 대한 특이사항 (댓글)</h3>
+                            <div id="album-comments-list" class="space-y-2 mb-3"><div class="text-xs text-gray-400">댓글을 불러오는 중...</div></div>
+                            <div class="flex gap-2">
+                                <textarea id="new_album_cmt" placeholder="특이사항이나 사진 설명을 남겨주세요..." class="flex-1 border p-2 text-xs rounded outline-none h-10 focus:ring-2 focus:ring-blue-500"></textarea>
+                                <button onclick="addAlbumComment('${currentFolderId}')" class="bg-blue-600 text-white px-3 rounded text-sm font-bold hover:bg-blue-700">등록</button>
+                            </div>
+                        </div>
+                    `;
+                }
+                
                 main.innerHTML = html + `</div>`;
                 
                 // 앨범 하위 폴더인 경우 폴더 ID를, 그 외에는 타입명 전달
@@ -567,27 +583,37 @@
                         const modDate = f.modifiedTime ? f.modifiedTime.substring(0, 10) : '';
 
                         // 폴더면 클릭 시 내부 탐색(enterFolder) 실행, 파일이면 새 창(webViewLink) 열기
+                        // [수정] 삭제 버튼 추가 및 긴 파일명 줄바꿈(break-all) 처리
                         if (isFolder) {
                             fileHtml += `
-                                <div onclick="enterFolder('${f.id}')" class="border p-3 rounded-lg shadow-sm hover:shadow-md transition flex flex-col items-center bg-white cursor-pointer text-center hover:bg-gray-50">
+                                <div onclick="enterFolder('${f.id}')" class="relative border p-3 rounded-lg shadow-sm hover:shadow-md transition flex flex-col items-center bg-white cursor-pointer text-center hover:bg-gray-50">
+                                    <button onclick="deleteR2Item('${f.id}', true, event)" class="absolute top-1 right-1 text-gray-400 hover:text-red-500 bg-white rounded-full p-1 shadow-sm leading-none z-10">🗑️</button>
                                     ${thumb}
-                                    <span class="text-xs font-bold text-gray-800 truncate w-full mb-1" title="${f.name}">${f.name}</span>
+                                    <span class="text-xs font-bold text-gray-800 w-full mb-1 break-all" title="${f.name}">${f.name}</span>
                                     <span class="text-[0.65rem] text-gray-400">${modDate}</span>
                                 </div>
                             `;
                         } else {
                             fileHtml += `
-                                <a href="${f.webViewLink}" target="_blank" class="border p-3 rounded-lg shadow-sm hover:shadow-md transition flex flex-col items-center bg-white cursor-pointer text-center hover:bg-gray-50">
-                                    ${thumb}
-                                    <span class="text-xs font-bold text-gray-800 truncate w-full mb-1" title="${f.name}">${f.name}</span>
+                                <div class="relative border p-3 rounded-lg shadow-sm hover:shadow-md transition flex flex-col items-center bg-white text-center hover:bg-gray-50">
+                                    <button onclick="deleteR2Item('${f.id}', false, event)" class="absolute top-1 right-1 text-gray-400 hover:text-red-500 bg-white rounded-full p-1 shadow-sm leading-none z-10">🗑️</button>
+                                    <a href="${f.webViewLink}" target="_blank" class="w-full flex flex-col items-center">
+                                        ${thumb}
+                                        <span class="text-xs font-bold text-gray-800 w-full mb-1 break-all" title="${f.name}">${f.name}</span>
+                                    </a>
                                     <span class="text-[0.65rem] text-gray-400">${modDate}</span>
-                                </a>
+                                </div>
                             `;
                         }
                     });
                     fileHtml += `</div>`;
                     container.innerHTML = fileHtml;
                     container.classList.remove('text-center', 'py-10');
+
+                    // [신규 추가] 화면 로딩이 끝나고, 앨범 폴더 내부라면 댓글 정보 불러오기
+                    if (folderType === 'album' && targetFolderId) {
+                        loadAlbumComments(targetFolderId);
+                    }
                 } else {
                     container.innerHTML = `<div class="text-red-500 font-bold text-center py-10 w-full col-span-full">파일 로딩 실패: ${data.message}</div>`;
                 }
@@ -936,6 +962,85 @@
         }
         
         // [수정] window.onload = initApp; 은 대단원 4에서 이미 통합 처리했으므로 중복 충돌을 막기 위해 삭제했습니다.
+
+        // =================================================================================
+        // [신규 추가] R2 파일/폴더 삭제 및 앨범 전용 댓글 제어 로직
+        // =================================================================================
+
+        // 1. R2 파일 및 폴더 삭제 API 연동
+        async function deleteR2Item(key, isFolder, event) {
+            if(event) event.stopPropagation(); // 폴더를 클릭해 들어가는 이벤트 방지
+            
+            const msg = isFolder ? "정말 이 앨범(폴더)을 삭제하시겠습니까?\n내부의 사진들도 모두 삭제됩니다." : "정말 이 파일을 삭제하시겠습니까?";
+            if(!confirm(msg)) return;
+            
+            try {
+                const res = await fetch('/api/r2/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ key: key, is_folder: isFolder })
+                });
+                const data = await res.json();
+                
+                if(data.status === 'success') renderTab(); 
+                else alert("삭제 실패: " + data.message);
+            } catch(e) { alert("삭제 중 오류가 발생했습니다."); }
+        }
+
+        // 2. 앨범 전용 댓글 불러오기
+        async function loadAlbumComments(folderPath) {
+            try {
+                const res = await fetch(`/api/album_comments?folder_path=${encodeURIComponent(folderPath)}`);
+                const data = await res.json();
+                
+                const listDiv = document.getElementById('album-comments-list');
+                if(!listDiv) return;
+                
+                if(!data.data || data.data.length === 0) {
+                    listDiv.innerHTML = `<div class="text-xs text-gray-400">등록된 특이사항이 없습니다.</div>`;
+                    return;
+                }
+                
+                let html = '';
+                data.data.forEach(c => {
+                    html += `
+                        <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded border flex justify-between items-start mb-1">
+                            <div>
+                                <span class="font-bold text-blue-800 mr-2">${c.author}</span>
+                                <span class="text-gray-800 whitespace-pre-wrap">${c.content}</span>
+                                <div class="text-[0.65rem] text-gray-400 mt-1">${formatDate(c.created_at)}</div>
+                            </div>
+                            <button onclick="deleteAlbumComment(${c.id}, '${folderPath}')" class="text-gray-400 hover:text-red-500 ml-2">✖</button>
+                        </div>
+                    `;
+                });
+                listDiv.innerHTML = html;
+            } catch(e) { console.error("댓글 로딩 오류:", e); }
+        }
+
+        // 3. 앨범 전용 댓글 등록하기
+        async function addAlbumComment(folderPath) {
+            const val = document.getElementById('new_album_cmt').value;
+            if(!val) return;
+            
+            try {
+                await fetch('/api/album_comments', { 
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({ folder_path: folderPath, content: val, author: userName }) 
+                });
+                document.getElementById('new_album_cmt').value = '';
+                loadAlbumComments(folderPath); // 화면 전체 대신 댓글만 새로 갱신
+            } catch(e) { alert("댓글 등록에 실패했습니다."); }
+        }
+
+        // 4. 앨범 전용 댓글 삭제하기
+        async function deleteAlbumComment(id, folderPath) {
+            if(confirm("댓글을 삭제하시겠습니까?")) {
+                await fetch(`/api/album_comments/${id}`, { method: 'DELETE' });
+                loadAlbumComments(folderPath);
+            }
+        }
     </script>
 
     <!-- [신규 추가] 원본 이미지 보기 모달: </body> 태그가 끝나기 직전 위치에 삽입됩니다. -->
