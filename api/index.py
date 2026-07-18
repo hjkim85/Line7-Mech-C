@@ -149,7 +149,46 @@ def handle_table(table):
         if table == 'tasks': query = "?order=start_date.desc"
         if table == 'events': query = "?order=event_date.desc"
         if table == 'event_comments': query = "?order=created_at.asc"
-        return jsonify({"status": "success", "data": db_request(table, 'GET', query)})
+        
+        data = db_request(table, 'GET', query)
+        
+        # [신규 추가] 이벤트 테이블 조회 시, 해당 이벤트의 앨범 폴더에서 사진 URL을 가져와 덧붙여줍니다.
+        if table == 'events' and data:
+            try:
+                s3 = get_r2_client()
+                bucket = os.environ.get('R2_BUCKET_NAME')
+                
+                for event in data:
+                    event_title = event.get('title', '')
+                    if not event_title:
+                        event['imageUrls'] = []
+                        continue
+                        
+                    prefix = f"album/{event_title}/"
+                    image_urls = []
+                    
+                    try:
+                        response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+                        if 'Contents' in response:
+                            for obj in response['Contents']:
+                                if obj['Key'] == prefix: continue # 껍데기 폴더 제외
+                                
+                                # 프론트엔드에서 썸네일을 볼 수 있도록 1시간짜리 Presigned URL 발급
+                                presigned_url = s3.generate_presigned_url(
+                                    'get_object',
+                                    Params={'Bucket': bucket, 'Key': obj['Key']},
+                                    ExpiresIn=3600
+                                )
+                                image_urls.append(presigned_url)
+                    except Exception as e:
+                        print(f"R2 Image List Error for event '{event_title}': {e}")
+                    
+                    event['imageUrls'] = image_urls
+            except Exception as e:
+                print(f"R2 Client Error during events fetch: {e}")
+
+        return jsonify({"status": "success", "data": data})
+        
     elif request.method == 'POST':
         return jsonify({"status": "success", "data": db_request(table, 'POST', "", request.json)})
 
