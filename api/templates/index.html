@@ -58,6 +58,14 @@
 
         /* [신규 추가] 사진 첨부 미리보기 썸네일 규격 */
         .preview-img { width: 50px; height: 50px; object-fit: cover; border-radius: 0.375rem; border: 1px solid #e2e8f0; }
+
+        /* [신규 추가] 이벤트 카드 내 썸네일 및 원본 보기 모달 스타일 */
+        .event-thumbnails { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px; }
+        .event-thumbnails img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 1px solid #e2e8f0; transition: transform 0.2s; }
+        .event-thumbnails img:hover { transform: scale(1.05); }
+        .image-modal { position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.85); display: flex; justify-content: center; align-items: center; }
+        .image-modal-content { max-width: 90%; max-height: 90%; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .close-modal { position: absolute; top: 20px; right: 35px; color: #fff; font-size: 40px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -226,6 +234,34 @@
             });
         }
 
+        // [신규 추가] 이벤트 원본 이미지 모달 열기
+        function openImageViewer(imageUrl) {
+            const modal = document.getElementById('imageViewerModal');
+            const fullImage = document.getElementById('fullSizeImage');
+            if (modal && fullImage) {
+                fullImage.src = imageUrl;
+                modal.style.display = 'flex';
+            }
+        }
+
+        // [신규 추가] 이벤트 원본 이미지 모달 닫기
+        function closeImageViewer() {
+            const modal = document.getElementById('imageViewerModal');
+            const fullImage = document.getElementById('fullSizeImage');
+            if (modal && fullImage) {
+                modal.style.display = 'none';
+                fullImage.src = ''; // 메모리 관리를 위해 src 초기화
+            }
+        }
+
+        // [신규 추가] 바탕(검은 영역)을 클릭해도 모달이 닫히도록 이벤트 리스너 설정
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('imageViewerModal');
+            if (event.target === modal) {
+                closeImageViewer();
+            }
+        });
+        
         // ==============================================================================
         // [대단원 5] 자바스크립트: 화면 UI 렌더링 및 클릭 이벤트 제어                   
         // ==============================================================================
@@ -385,6 +421,13 @@
                                     </div>
                                     <p class="text-sm text-gray-800 my-3 whitespace-pre-wrap leading-relaxed border-l-2 border-gray-300 pl-2"><strong>초기 증상:</strong>\n${e.content}</p>
                                     
+                                    <!-- [신규 추가] 이벤트 사진 썸네일 렌더링 영역 -->
+                                    ${(e.imageUrls && e.imageUrls.length > 0) ? `
+                                        <div class="event-thumbnails bg-white p-2 border rounded">
+                                            ${e.imageUrls.map(url => `<img src="${url}" onclick="openImageViewer('${url}')" alt="이벤트 사진">`).join('')}
+                                        </div>
+                                    ` : ''}
+
                                     <!-- [수정] 이벤트 내부 사진 첨부 UI 로직 -->
                                     <div class="my-3 p-3 bg-gray-100 border border-dashed border-gray-300 rounded text-center">
                                         <input type="file" id="evt_files_${e.id}" multiple accept="image/*" class="hidden" onchange="uploadEventPhotos(${e.id}, '${e.title}')">
@@ -844,6 +887,8 @@
                 }
                 
                 alert("이벤트 사진 첨부 완료! 앨범 탭에서 확인할 수 있습니다.");
+                // [신규 추가] 업로드 성공 후 화면을 다시 그려 썸네일이 바로 갱신되도록 유도합니다.
+                initApp();
             } catch(e) {
                 alert("업로드 중 네트워크 오류가 발생했습니다.");
             } finally {
@@ -853,7 +898,7 @@
         }
         
         // 🚨 ==============================================================================
-        // 🚨 [대단원 7] 자바스크립트: 댓글 및 삭제/수정 공통 액션 로직                   
+        // 🚨 [대단원 7] 자바스크립트: 댓글 및 삭제/수정 공통 액션 로직                    
         // 🚨 ==============================================================================
         
         function toggleCommentEdit(id) {
@@ -892,5 +937,11 @@
         
         // [수정] window.onload = initApp; 은 대단원 4에서 이미 통합 처리했으므로 중복 충돌을 막기 위해 삭제했습니다.
     </script>
+
+    <!-- [신규 추가] 원본 이미지 보기 모달: </body> 태그가 끝나기 직전 위치에 삽입됩니다. -->
+    <div id="imageViewerModal" class="image-modal" style="display: none;">
+        <span class="close-modal" onclick="closeImageViewer()">&times;</span>
+        <img class="image-modal-content" id="fullSizeImage">
+    </div>
 </body>
 </html>
