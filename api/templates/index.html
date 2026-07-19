@@ -462,13 +462,15 @@
                 const title = isAlbum ? "🖼️ 현장 사진 앨범" : "📁 도면 및 매뉴얼 자료실";
                 const folderType = isAlbum ? "album" : "docs"; 
 
-                // [수정] 뒤로 가기(탐색기) UI (자료실도 적용되도록 조건 변경)
+                // [핵심 수정] 뒤로 가기(탐색기) UI 노출 조건을 folderHistory 배열 길이에서 currentFolderId의 존재 여부로 변경
                 let navHtml = '';
-                if (folderHistory.length > 0) {
+                if (currentFolderId) {
+                    // 폴더 경로 구조(예: album/폴더명/)에서 폴더 이름만 추출하여 화면에 표시합니다.
+                    const folderName = currentFolderId.split('/').filter(Boolean).pop() || '내부 폴더';
                     navHtml = `
                         <div class="flex items-center gap-2 mb-3 bg-gray-50 p-2 rounded border col-span-full">
                             <button onclick="goBackFolder()" class="px-3 py-1 bg-white border rounded text-xs font-bold hover:bg-gray-100 shadow-sm">◀ 상위 폴더로</button>
-                            <span class="text-xs text-gray-600 font-bold truncate">현재: 내부 폴더 탐색 중...</span>
+                            <span class="text-xs text-gray-600 font-bold truncate">현재 폴더: ${folderName}</span>
                         </div>
                     `;
                 }
