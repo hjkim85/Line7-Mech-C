@@ -662,20 +662,51 @@
             const table = forceTable || (currentTab === 0 ? 'notices' : (currentTab === 3 || currentTab === 4) ? 'events' : 'tasks');
             const body = document.getElementById('modalBody');
             
-            // [신규 추가] 자료실이나 앨범 탭에서 파일을 올리는 경우 모달 UI를 완전히 다르게 구성합니다.
+            // [신규 수정] 자료실이나 앨범 탭에서 파일을 올리는 경우 모달 UI를 완전히 다르게 구성합니다.
             if (table === 'docs' || table === 'album') {
                 const isDoc = table === 'docs';
                 body.innerHTML = `
                     <div class="mb-3 text-xs text-gray-500 bg-gray-50 p-2 rounded border">
-                        ${isDoc ? '📌 매뉴얼, 도면 등 문서 파일(PDF, HWP, CAD 등)을 업로드합니다.' : '📌 앨범에 추가할 사진을 최대 5장까지 선택해 주세요.'}
+                        ${isDoc ? '📌 매뉴얼, 도면 등 문서 파일(PDF, HWP, CAD 등)을 업로드합니다.' : '📌 앨범에 추가할 사진을 최대 15장까지 선택해 주세요.'}
                     </div>
-                    ${isDoc ? '' : '<input type="text" id="m_folder_name" placeholder="사진을 묶을 앨범 제목 (이벤트명과 동일하면 연결됨)" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 mb-2">'}
+                    
+                    <!-- [핵심 수정] datalist를 추가하고 자료실/앨범 모두에 폴더명 입력칸 적용 -->
+                    <datalist id="folder_list"></datalist>
+                    <input type="text" id="m_folder_name" list="folder_list" placeholder="${isDoc ? '자료를 묶을 폴더명 (입력 또는 목록에서 선택)' : '사진을 묶을 앨범 제목 (입력 또는 목록에서 선택)'}" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 mb-2">
+                    
                     <input type="file" id="m_files" ${isDoc ? '' : 'multiple accept="image/*"'} class="w-full border p-3 rounded-lg bg-gray-50">
                     <div id="m_upload_status" class="text-xs text-blue-600 font-bold mt-2 hidden"><div class="spinner border-blue-500 border-t-transparent w-3 h-3 border-2"></div> 업로드 중... 창을 닫지 마세요!</div>
                 `;
                 document.getElementById('modalTitle').innerText = isDoc ? "자료실 파일 올리기" : "앨범 사진 올리기";
                 document.getElementById('modalButtons').innerHTML = `<button onclick="${isDoc ? 'uploadDocs()' : 'uploadAlbum()'}" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg mt-4 shadow-md hover:bg-blue-700 transition">업로드 시작</button>`;
                 document.getElementById('actionModal').classList.remove('hidden');
+
+                // [핵심 수정] 폴더명 드롭다운 채우기 및 현재 폴더 고정(Context-Aware) 로직
+                setTimeout(() => {
+                    const folderInput = document.getElementById('m_folder_name');
+                    const dataList = document.getElementById('folder_list');
+                    if (folderInput) {
+                        if (currentFolderId) {
+                            // 특정 폴더 안으로 들어온 상태: 현재 폴더명 자동 입력 및 수정 불가(잠금)
+                            const parts = currentFolderId.split('/');
+                            // R2 경로는 'album/폴더명/' 형태이므로 마지막 슬래시를 감안해 폴더명 추출
+                            const folderName = parts[parts.length - 1] === '' ? parts[parts.length - 2] : parts[parts.length - 1];
+                            
+                            folderInput.value = folderName;
+                            folderInput.readOnly = true;
+                            folderInput.classList.add('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+                        } else {
+                            // 최상위 루트 상태: 화면에 그려져 있는 기존 폴더 이름들을 긁어와서 드롭다운(datalist)으로 세팅
+                            const folderElements = document.querySelectorAll(`#drive-contents-${currentTab} div[onclick^="enterFolder"] span[title]`);
+                            let options = '';
+                            folderElements.forEach(el => {
+                                options += `<option value="${el.title}"></option>`;
+                            });
+                            dataList.innerHTML = options;
+                        }
+                    }
+                }, 10);
+
                 return; // 게시판 글쓰기 로직으로 넘어가지 않도록 여기서 끊어줍니다.
             }
 
@@ -790,9 +821,12 @@
             } catch(e) { alert("저장 실패했습니다."); }
         }
 
-        // [신규 수정] Cloudflare R2 자료실 스토리지 직통 업로드
+        // [신규 수정] Cloudflare R2 자료실 스토리지 직통 업로드 (폴더명 반영)
         async function uploadDocs() {
+            const folderName = document.getElementById('m_folder_name').value.trim();
             const fileInput = document.getElementById('m_files');
+            
+            if(!folderName) return alert("자료를 저장할 폴더명을 입력해주세요.");
             if(fileInput.files.length === 0) return alert("자료를 선택해주세요.");
             
             const file = fileInput.files[0];
@@ -800,11 +834,14 @@
             statusDiv.classList.remove('hidden');
             
             try {
+                // [핵심 수정] 자료실도 입력된 폴더명(folderName)을 반영하여 R2 경로(prefix) 구성
+                const prefix = `docs/${folderName}/`;
+                
                 // 1. 백엔드에서 1시간짜리 '업로드 통행증(Presigned URL)' 발급받기
                 const ticketRes = await fetch('/api/r2/presigned', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ file_name: file.name, file_type: file.type || 'application/octet-stream', prefix: 'docs/' })
+                    body: JSON.stringify({ file_name: file.name, file_type: file.type || 'application/octet-stream', prefix: prefix })
                 });
                 const ticketData = await ticketRes.json();
                 
@@ -832,11 +869,12 @@
 
         // [신규 수정] 앨범 탭 다중 이미지 R2 직통 업로드
         async function uploadAlbum() {
-            const folderName = document.getElementById('m_folder_name').value;
+            const folderName = document.getElementById('m_folder_name').value.trim();
             const fileInput = document.getElementById('m_files');
             if(!folderName) return alert("앨범 제목을 입력해주세요.");
             if(fileInput.files.length === 0) return alert("사진을 선택해주세요.");
-            if(fileInput.files.length > 15) return alert("사진은 한 번에 최대 5장까지만 가능합니다.");
+            // [핵심 수정] 경고 메시지의 텍스트를 5장에서 15장으로 수정
+            if(fileInput.files.length > 15) return alert("사진은 한 번에 최대 15장까지만 가능합니다.");
 
             const statusDiv = document.getElementById('m_upload_status');
             statusDiv.classList.remove('hidden');
