@@ -267,12 +267,13 @@
         // [대단원 5] 자바스크립트: 화면 UI 렌더링 및 클릭 이벤트 제어                   
         // ==============================================================================
         function switchTab(index) {
+            // [수정] 탭을 이동할 때 폴더 탐색 기록 초기화 (자료실과 앨범 간 이동 시 경로 섞임 방지)
+            if(currentTab !== index) { folderHistory = []; currentFolderId = null; }
+            
             currentTab = index;
             document.querySelectorAll('.tab-btn').forEach((btn, i) => btn.className = `tab-btn ${i === index ? 'active' : ''}`);
             document.getElementById('globalAddBtn').style.display = (currentTab === 0 || currentTab > 4) ? 'none' : 'flex';
             
-            // [신규 추가] 탭을 이동할 때 폴더 탐색 기록 초기화
-            if(index !== 7) { folderHistory = []; currentFolderId = null; }
             renderTab();
         }
 
@@ -455,15 +456,15 @@
                 }
                 main.innerHTML = html + `</div>`;
             } 
-            // [수정] 탭 5(자료실) 및 탭 7(앨범) 이원화 통신 및 내부 탐색 렌더링 로직
+            // [수정] 탭 5(자료실) 및 탭 7(앨범) 이원화 통신 및 내부 탐색 렌더링 로직 통합
             else if (currentTab === 5 || currentTab === 7) {
                 const isAlbum = currentTab === 7;
                 const title = isAlbum ? "🖼️ 현장 사진 앨범" : "📁 도면 및 매뉴얼 자료실";
                 const folderType = isAlbum ? "album" : "docs"; 
 
-                // [신규 추가] 뒤로 가기(탐색기) UI
+                // [수정] 뒤로 가기(탐색기) UI (자료실도 적용되도록 조건 변경)
                 let navHtml = '';
-                if (isAlbum && folderHistory.length > 0) {
+                if (folderHistory.length > 0) {
                     navHtml = `
                         <div class="flex items-center gap-2 mb-3 bg-gray-50 p-2 rounded border col-span-full">
                             <button onclick="goBackFolder()" class="px-3 py-1 bg-white border rounded text-xs font-bold hover:bg-gray-100 shadow-sm">◀ 상위 폴더로</button>
@@ -481,14 +482,14 @@
                 html += navHtml;
                 html += `<div id="drive-contents-${currentTab}" class="col-span-full text-center py-10 text-gray-500 font-bold"><div class="spinner border-gray-400 border-t-transparent w-5 h-5 border-2 mb-2"></div><br>데이터를 동기화 중입니다...</div>`;
                 
-                // [신규 추가] 앨범 상세 폴더 안으로 들어왔을 때 하단에 댓글 영역 뼈대 추가
-                if (isAlbum && currentFolderId) {
+                // [수정] 앨범 및 자료실 상세 폴더 안으로 들어왔을 때 하단에 댓글 영역 뼈대 추가
+                if (currentFolderId) {
                     html += `
                         <div id="album-comments-section" class="col-span-full mt-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                            <h3 class="font-bold text-blue-900 mb-3 border-b pb-2 text-sm">💬 이 앨범에 대한 특이사항 (댓글)</h3>
+                            <h3 class="font-bold text-blue-900 mb-3 border-b pb-2 text-sm">💬 이 ${isAlbum ? '앨범' : '폴더'}에 대한 특이사항 (댓글)</h3>
                             <div id="album-comments-list" class="space-y-2 mb-3"><div class="text-xs text-gray-400">댓글을 불러오는 중...</div></div>
                             <div class="flex gap-2">
-                                <textarea id="new_album_cmt" placeholder="특이사항이나 사진 설명을 남겨주세요..." class="flex-1 border p-2 text-xs rounded outline-none h-10 focus:ring-2 focus:ring-blue-500"></textarea>
+                                <textarea id="new_album_cmt" placeholder="특이사항이나 설명을 남겨주세요..." class="flex-1 border p-2 text-xs rounded outline-none h-10 focus:ring-2 focus:ring-blue-500"></textarea>
                                 <button onclick="addAlbumComment('${currentFolderId}')" class="bg-blue-600 text-white px-3 rounded text-sm font-bold hover:bg-blue-700">등록</button>
                             </div>
                         </div>
@@ -497,8 +498,8 @@
                 
                 main.innerHTML = html + `</div>`;
                 
-                // 앨범 하위 폴더인 경우 폴더 ID를, 그 외에는 타입명 전달
-                if (isAlbum && currentFolderId) {
+                // [수정] 하위 폴더인 경우 폴더 ID를, 그 외에는 타입명 전달
+                if (currentFolderId) {
                     fetchDriveFiles(folderType, currentTab, currentFolderId);
                 } else {
                     fetchDriveFiles(folderType, currentTab); 
@@ -549,8 +550,9 @@
                 
                 // 검색할 상위 폴더 경로(prefix) 설정
                 let prefix = folderType === 'docs' ? 'docs/' : 'album/';
-                if (folderType === 'album' && targetFolderId) {
-                    prefix = targetFolderId; // R2 API는 폴더 경로 자체를 ID로 사용함 (예: 'album/250720_이벤트/')
+                // [수정] 자료실도 하위 폴더 진입 시 prefix를 덮어쓰도록 변경
+                if (targetFolderId) {
+                    prefix = targetFolderId; // R2 API는 폴더 경로 자체를 ID로 사용함
                 }
 
                 const res = await fetch(apiUrl, {
@@ -610,8 +612,8 @@
                     container.innerHTML = fileHtml;
                     container.classList.remove('text-center', 'py-10');
 
-                    // [신규 추가] 화면 로딩이 끝나고, 앨범 폴더 내부라면 댓글 정보 불러오기
-                    if (folderType === 'album' && targetFolderId) {
+                    // [수정] 화면 로딩이 끝나고, 상세 폴더 내부라면 댓글 정보 불러오기 (자료실/앨범 공통 적용)
+                    if (targetFolderId) {
                         loadAlbumComments(targetFolderId);
                     }
                 } else {
@@ -834,7 +836,7 @@
             const fileInput = document.getElementById('m_files');
             if(!folderName) return alert("앨범 제목을 입력해주세요.");
             if(fileInput.files.length === 0) return alert("사진을 선택해주세요.");
-            if(fileInput.files.length > 5) return alert("사진은 한 번에 최대 5장까지만 가능합니다.");
+            if(fileInput.files.length > 15) return alert("사진은 한 번에 최대 5장까지만 가능합니다.");
 
             const statusDiv = document.getElementById('m_upload_status');
             statusDiv.classList.remove('hidden');
